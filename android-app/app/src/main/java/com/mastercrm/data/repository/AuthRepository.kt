@@ -74,7 +74,7 @@ class AuthRepository(context: Context) {
         private const val KEY_SERVER_URL = "server_base_url"
         private const val KEY_LAST_SYNC_TIME = "last_sync_time"
 
-        // 10.0.2.2 is Android emulator host loopback
-        const val DEFAULT_URL = "http://10.0.2.2:8000/"
+        // Production Render backend URL
+        const val DEFAULT_URL = "https://mastercrm-ds4j.onrender.com/"
     }
 }
