@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -490,7 +491,7 @@ fun ScheduleSettingsTab() {
                                     )
                                 )
                                 if (resp.success) {
-                                    Toast.makeText(context, "Графік збережено!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Графік роботи успішно оновлено!", Toast.LENGTH_SHORT).show()
                                 }
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Помилка: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -499,7 +500,7 @@ fun ScheduleSettingsTab() {
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
                 ) {
-                    Text("Зберегти")
+                    Text("Зберегти графік")
                 }
             }
         }
@@ -510,35 +511,80 @@ fun ScheduleSettingsTab() {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .padding(12.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = day.isWorkingDay,
-                            onCheckedChange = { isChecked ->
-                                scheduleDays = scheduleDays.map {
-                                    if (it.dayOfWeek == day.dayOfWeek) it.copy(isWorkingDay = isChecked) else it
-                                }
-                            }
-                        )
-                        Text(
-                            text = DAY_NAMES.getOrElse(day.dayOfWeek) { "День ${day.dayOfWeek}" },
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(
+                                checked = day.isWorkingDay,
+                                onCheckedChange = { isChecked ->
+                                    scheduleDays = scheduleDays.map {
+                                        if (it.dayOfWeek == day.dayOfWeek) it.copy(isWorkingDay = isChecked) else it
+                                    }
+                                },
+                                modifier = Modifier.scale(0.85f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = DAY_NAMES.getOrElse(day.dayOfWeek) { "День ${day.dayOfWeek}" },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+
+                        if (!day.isWorkingDay) {
+                            Text("Вихідний", fontSize = 13.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                        }
                     }
 
                     if (day.isWorkingDay) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("${day.startTime} - ${day.endTime}", fontSize = 13.sp, color = RosePrimary, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = day.startTime,
+                                onValueChange = { newStart ->
+                                    scheduleDays = scheduleDays.map {
+                                        if (it.dayOfWeek == day.dayOfWeek) it.copy(startTime = newStart) else it
+                                    }
+                                },
+                                label = { Text("Початок") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("—", fontWeight = FontWeight.Bold)
+                            OutlinedTextField(
+                                value = day.endTime,
+                                onValueChange = { newEnd ->
+                                    scheduleDays = scheduleDays.map {
+                                        if (it.dayOfWeek == day.dayOfWeek) it.copy(endTime = newEnd) else it
+                                    }
+                                },
+                                label = { Text("Кінець") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = day.slotStepMinutes == 30,
+                                onClick = {
+                                    val newStep = if (day.slotStepMinutes == 30) 60 else 30
+                                    scheduleDays = scheduleDays.map {
+                                        if (it.dayOfWeek == day.dayOfWeek) it.copy(slotStepMinutes = newStep) else it
+                                    }
+                                },
+                                label = { Text("${day.slotStepMinutes}хв", fontSize = 11.sp) }
+                            )
                         }
-                    } else {
-                        Text("Вихідний", fontSize = 13.sp, color = Color.Gray)
                     }
                 }
             }

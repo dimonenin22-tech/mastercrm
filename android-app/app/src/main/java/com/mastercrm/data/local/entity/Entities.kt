@@ -133,3 +133,26 @@ data class OutboxMutationEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val retryCount: Int = 0
 )
+
+@Entity(tableName = "visit_briefs")
+data class VisitBriefEntity(
+    @PrimaryKey val id: String,
+    val appointmentId: String,
+    val clientId: String,
+    val masterId: String,
+    val materialNotes: String?,
+    val nailCondition: String?,
+    val coffeePrefs: String?,
+    val photoUrl: String?,
+    val coatingCondition: String?,
+    val nailPlateType: String?,
+    val cuticleType: String?,
+    val baseGelUsed: String?,
+    val designAndLength: String?,
+    val healthNotes: String?,
+    val photoBeforeUrl: String?,
+    val photoAfterUrl: String?,
+    val deleted: Boolean = false,
+    val version: Int = 1,
+    val updatedAt: String = ""
+)

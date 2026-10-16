@@ -210,6 +210,31 @@ class ReminderTemplateDto(BaseModel):
     is_active: bool
 
 
+class VisitBriefDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    appointment_id: str
+    client_id: str
+    master_id: str
+    material_notes: Optional[str] = ""
+    nail_condition: Optional[str] = ""
+    coffee_prefs: Optional[str] = ""
+    photo_url: Optional[str] = ""
+    coating_condition: Optional[str] = ""
+    nail_plate_type: Optional[str] = ""
+    cuticle_type: Optional[str] = ""
+    base_gel_used: Optional[str] = ""
+    design_and_length: Optional[str] = ""
+    health_notes: Optional[str] = ""
+    photo_before_url: Optional[str] = ""
+    photo_after_url: Optional[str] = ""
+    created_at: datetime
+    updated_at: datetime
+    deleted: bool
+    version: int
+
+
 class SyncResponseData(BaseModel):
     appointments: list[AppointmentDto] = Field(default_factory=list)
     clients: list[ClientDto] = Field(default_factory=list)
@@ -220,6 +245,8 @@ class SyncResponseData(BaseModel):
     products: list[ProductDto] = Field(default_factory=list)
     reviews: list[ReviewDto] = Field(default_factory=list)
     schedules: list[ScheduleDto] = Field(default_factory=list)
+    visit_briefs: list[VisitBriefDto] = Field(default_factory=list)
     settings: dict[str, str] = Field(default_factory=dict)
     server_sync_time: str
+
 

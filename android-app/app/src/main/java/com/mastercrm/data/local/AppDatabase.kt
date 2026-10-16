@@ -17,9 +17,10 @@ import com.mastercrm.data.local.entity.*
         ExpenseEntity::class,
         ProductEntity::class,
         ReviewEntity::class,
-        OutboxMutationEntity::class
+        OutboxMutationEntity::class,
+        VisitBriefEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun reviewDao(): ReviewDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun visitBriefDao(): VisitBriefDao
 
     companion object {
         @Volatile

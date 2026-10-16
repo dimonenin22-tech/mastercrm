@@ -246,7 +246,7 @@ async def send_post_visit_and_14day_checks() -> None:
 
             stmt_14d = (
                 select(Appointment)
-                .options(selectinload(Appointment.client), selectinload(Appointment.notifications))
+                .options(selectinload(Appointment.client), selectinload(Appointment.service), selectinload(Appointment.notifications))
                 .where(
                     Appointment.date == target_date,
                     Appointment.status == "COMPLETED",
@@ -261,6 +261,32 @@ async def send_post_visit_and_14day_checks() -> None:
 
                 already_sent = {n.reminder_type for n in apt.notifications if n.status == "SUCCESS"}
                 if "2weeks_review" not in already_sent:
+                    # Check if client has future active appointment
+                    future_stmt = select(Appointment).where(
+                        Appointment.client_id == apt.client_id,
+                        Appointment.date > apt.date,
+                        Appointment.status.in_(["PENDING", "CONFIRMED"]),
+                        Appointment.deleted.is_(False)
+                    ).order_by(Appointment.date.asc(), Appointment.start_time.asc())
+                    future_res = await db.execute(future_stmt)
+                    next_apt = future_res.scalars().first()
+                    has_future = next_apt is not None
+
+                    service_title = apt.service.title if apt.service else "манікюр"
+                    client_name = apt.client.first_name
+
+                    msg = (
+                        f"💅 <b>Привіт, {html.escape(client_name)}!</b>\n\n"
+                        f"Минуло 2 тижні з вашого візиту («{html.escape(service_title)}»). "
+                        f"Розкажіть, будь ласка, як носиться покриття? "
+                        f"Оцініть стан від 1 до 5 ⭐ або надішліть у відповідь текстовий відгук та 📸 фото стану нігтів зараз!"
+                    )
+
+                    if not has_future:
+                        msg += "\n\n✨ <b>До речі, у вас ще немає нового запису</b> — оберіть зручне віконце завчасно, поки є вільні місця!"
+                    else:
+                        msg += f"\n\n📅 <b>Нагадуємо:</b> ваш наступний візит вже заплановано на <b>{next_apt.date} о {next_apt.start_time}</b>!"
+
                     log = NotificationLog(
                         appointment_id=apt.id,
                         recipient_tg_id=apt.client.telegram_id,
@@ -269,14 +295,14 @@ async def send_post_visit_and_14day_checks() -> None:
                     )
                     db.add(log)
                     if bot:
-                        msg = (
-                            f"✨ <b>Привіт від вашого майстра!</b>\n\n"
-                            f"Минуло рівно 2 тижні з вашого останнього візиту. Як носиться покриття?\n"
-                            f"Саме час обрати зручний день та записатися на корекцію, щоб нігтики завжди були ідеальними! 💅☕️\n\n"
-                            f"Записатися можна в 1 клік через меню /start."
-                        )
+                        from app.bot.keyboards import get_wear_check_keyboard
                         try:
-                            await bot.send_message(chat_id=apt.client.telegram_id, text=msg, parse_mode="HTML")
+                            await bot.send_message(
+                                chat_id=apt.client.telegram_id,
+                                text=msg,
+                                reply_markup=get_wear_check_keyboard(apt.id, has_future),
+                                parse_mode="HTML"
+                            )
                         except Exception as e:
                             logger.warning("Failed to send 14-day check: %s", e)
                             log.status = "FAILED"

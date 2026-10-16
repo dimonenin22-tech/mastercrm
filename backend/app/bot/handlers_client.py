@@ -32,9 +32,12 @@ from app.models import (
     Master,
     Product,
     Review,
+    Schedule,
+    ScheduleException,
     Service,
     ServiceCategory,
     StudioSetting,
+    VisitBrief,
     WaitingList,
     utc_now,
 )
@@ -361,35 +364,74 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
 
         await state.update_data(master_id=master.id)
 
-        # Calculate free slots
-        stmt = select(Appointment).where(
-            Appointment.master_id == master.id,
-            Appointment.date == chosen_date,
-            Appointment.deleted.is_(False),
-            Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"])
+        # 1. Schedule & ScheduleException check
+        exc_stmt = select(ScheduleException).where(
+            ScheduleException.master_id == master.id,
+            ScheduleException.date == chosen_date,
+            ScheduleException.deleted.is_(False)
         )
-        existing = (await db.execute(stmt)).scalars().all()
-        occupied = []
-        for a in existing:
-            if a.start_time != "За домовленістю":
-                occupied.append((time_to_minutes(a.start_time), time_to_minutes(a.end_time)))
+        exc_res = await db.execute(exc_stmt)
+        sched_exc = exc_res.scalar_one_or_none()
 
-        dur = srv.duration_minutes + srv.buffer_minutes
+        day_start = 9 * 60
+        day_end = 19 * 60
+        slot_step = 30
+        is_day_off = False
+
+        if sched_exc and sched_exc.is_day_off:
+            is_day_off = True
+        elif sched_exc and sched_exc.start_time and sched_exc.end_time:
+            day_start = time_to_minutes(sched_exc.start_time)
+            day_end = time_to_minutes(sched_exc.end_time)
+        else:
+            try:
+                date_obj = datetime.strptime(chosen_date, "%Y-%m-%d")
+                weekday = date_obj.weekday()
+                sched_stmt = select(Schedule).where(
+                    Schedule.master_id == master.id,
+                    Schedule.day_of_week == weekday,
+                    Schedule.deleted.is_(False)
+                )
+                sched = (await db.execute(sched_stmt)).scalar_one_or_none()
+                if sched:
+                    if not sched.is_working_day:
+                        is_day_off = True
+                    else:
+                        day_start = time_to_minutes(sched.start_time)
+                        day_end = time_to_minutes(sched.end_time)
+                        slot_step = sched.slot_step_minutes or 30
+            except Exception:
+                pass
+
         free_slots = []
-        cur_min = 9 * 60
-        while cur_min + srv.duration_minutes <= 19 * 60:
-            s_slot = cur_min
-            e_slot = cur_min + dur
-            conflict = False
-            for os, oe in occupied:
-                if s_slot < oe and e_slot > os:
-                    conflict = True
-                    break
-            if not conflict:
-                h = cur_min // 60
-                m = cur_min % 60
-                free_slots.append(f"{h:02d}:{m:02d}")
-            cur_min += 30
+        if not is_day_off:
+            stmt = select(Appointment).where(
+                Appointment.master_id == master.id,
+                Appointment.date == chosen_date,
+                Appointment.deleted.is_(False),
+                Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"])
+            )
+            existing = (await db.execute(stmt)).scalars().all()
+            occupied = []
+            for a in existing:
+                if a.start_time != "За домовленістю":
+                    occupied.append((time_to_minutes(a.start_time), time_to_minutes(a.end_time)))
+
+            dur = srv.duration_minutes + srv.buffer_minutes
+            cur_min = day_start
+            while cur_min + srv.duration_minutes <= day_end:
+                s_slot = cur_min
+                e_slot = cur_min + dur
+                conflict = False
+                for os, oe in occupied:
+                    if s_slot < oe and e_slot > os:
+                        conflict = True
+                        break
+                if not conflict:
+                    h = cur_min // 60
+                    m = cur_min % 60
+                    free_slots.append(f"{h:02d}:{m:02d}")
+                cur_min += slot_step
 
     await state.set_state(BookingStates.waiting_for_time)
     if free_slots:
@@ -659,6 +701,24 @@ async def process_receipt_photo(message: Message, state: FSMContext) -> None:
 
 
 # 6. Reviews Flow
+@client_router.callback_query(F.data == "booking:start")
+async def process_booking_start_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await start_booking_flow(callback.message, state)
+
+
+@client_router.callback_query(F.data.startswith("wear_fb:"))
+async def process_wear_feedback_click(callback: CallbackQuery, state: FSMContext) -> None:
+    apt_id = callback.data.split(":")[1]
+    await state.update_data(wear_apt_id=apt_id)
+    await state.set_state(ReviewStates.waiting_for_comment)
+    await callback.message.answer(
+        "📸 <b>Будь ласка, надішліть фото ваших нігтиків або напишіть кілька слів у відповідь:</b>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
 @client_router.callback_query(F.data.startswith("review_"))
 async def process_review_score(callback: CallbackQuery, state: FSMContext) -> None:
     parts = callback.data.split("_")
@@ -683,15 +743,84 @@ async def process_review_score(callback: CallbackQuery, state: FSMContext) -> No
         await db.commit()
         await db.refresh(rev)
 
-        await state.update_data(review_id=rev.id)
+        await state.update_data(review_id=rev.id, wear_apt_id=apt_id)
         await state.set_state(ReviewStates.waiting_for_comment)
 
     await callback.message.edit_text(
         f"Дякуємо за оцінку <b>{score} ⭐</b>!\n"
-        f"Напишіть, будь ласка, кілька слів про ваші враження від візиту (або надішліть будь-який смайлик):",
+        f"Напишіть, будь ласка, кілька слів про ваші враження від візиту або надішліть 📸 фото нігтів:",
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+@client_router.message(ReviewStates.waiting_for_comment, F.photo)
+async def process_review_photo(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    rev_id = data.get("review_id")
+    apt_id = data.get("wear_apt_id")
+    caption = message.caption or "Фото стану покриття"
+    photo_file_id = message.photo[-1].file_id
+
+    async with AsyncSessionLocal() as db:
+        tg_id = message.from_user.id if message.from_user else 0
+        c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id))
+        client = c_res.scalar_one_or_none()
+
+        if rev_id:
+            rev = await db.get(Review, rev_id)
+            if rev:
+                rev.comment = caption
+                rev.mark_updated()
+        elif apt_id and client:
+            rev = Review(
+                appointment_id=apt_id,
+                client_id=client.id,
+                rating=5,
+                comment=caption,
+                moderation_status="APPROVED",
+                is_published=True
+            )
+            db.add(rev)
+
+        # Update VisitBrief photo if apt_id is present
+        if apt_id:
+            vb_res = await db.execute(select(VisitBrief).where(VisitBrief.appointment_id == apt_id))
+            vb = vb_res.scalar_one_or_none()
+            if vb:
+                vb.photo_after_url = f"tg_photo_{photo_file_id}"
+                vb.mark_updated()
+
+        await db.commit()
+
+        # Forward photo to Master/Owner
+        from app.bot.bot_instance import bot
+        if bot and client:
+            owner_stmt = select(Master).where(
+                Master.role == "owner",
+                Master.deleted.is_(False),
+                Master.telegram_chat_id.isnot(None)
+            )
+            owners = (await db.execute(owner_stmt)).scalars().all()
+            alert_caption = (
+                f"📸 <b>Фото стану покриття від клієнта!</b>\n\n"
+                f"👤 Клієнт: <b>{html.escape(client.first_name)}</b> ({html.escape(client.phone)})\n"
+                f"💬 Коментар: {html.escape(caption)}"
+            )
+            for owner in owners:
+                if owner.telegram_chat_id:
+                    try:
+                        await bot.send_photo(
+                            chat_id=owner.telegram_chat_id,
+                            photo=photo_file_id,
+                            caption=alert_caption,
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to forward wear check photo: %s", e)
+
+    await state.clear()
+    await message.answer("❤️ <b>Дякуємо за фото та відгук!</b> Майстер уже бачить ваш результат.", parse_mode="HTML")
 
 
 @client_router.message(ReviewStates.waiting_for_comment, F.text)

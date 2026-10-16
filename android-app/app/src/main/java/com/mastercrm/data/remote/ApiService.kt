@@ -80,4 +80,24 @@ interface ApiService {
     suspend fun uploadPhoto(
         @Body body: Map<String, Any?>
     ): ApiResponse<PhotoDto>
+
+    @POST("exec?action=product_writeoff")
+    suspend fun writeoffProduct(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<Map<String, Any>>
+
+    @POST("exec?action=product_create")
+    suspend fun createProduct(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<ProductDto>
+
+    @POST("exec?action=service_consumables_get")
+    suspend fun getServiceConsumables(
+        @Body body: Map<String, String>
+    ): ApiResponse<List<ServiceConsumableItemDto>>
+
+    @POST("exec?action=service_consumables_set")
+    suspend fun setServiceConsumables(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<Map<String, Any>>
 }

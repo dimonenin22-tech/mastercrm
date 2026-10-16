@@ -44,6 +44,14 @@ async def init_and_seed_db() -> None:
             "ALTER TABLE clients ADD COLUMN no_show_count INTEGER DEFAULT 0",
             "ALTER TABLE clients ADD COLUMN is_blacklisted BOOLEAN DEFAULT 0",
             "ALTER TABLE clients ADD COLUMN discount_percent INTEGER DEFAULT 0",
+            "ALTER TABLE visit_briefs ADD COLUMN coating_condition TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN nail_plate_type TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN cuticle_type TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN base_gel_used TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN design_and_length TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN health_notes TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN photo_before_url TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ADD COLUMN photo_after_url TEXT DEFAULT ''",
         ]:
             try:
                 await conn.execute(text(col_sql))

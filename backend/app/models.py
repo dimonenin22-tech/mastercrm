@@ -173,6 +173,14 @@ class VisitBrief(Base, BaseMixin):
     nail_condition: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     coffee_prefs: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
     photo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
+    coating_condition: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
+    nail_plate_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
+    cuticle_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
+    base_gel_used: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
+    design_and_length: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
+    health_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
+    photo_before_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
+    photo_after_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
 
     appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="visit_brief")
 

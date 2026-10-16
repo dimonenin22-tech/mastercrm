@@ -3,8 +3,10 @@ package com.mastercrm.ui.screens
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -29,12 +32,54 @@ fun LoginScreen(
 ) {
     val app = MasterCrmApp.instance
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var otpCode by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showServerUrlDialog by remember { mutableStateOf(false) }
     var serverUrlInput by remember { mutableStateOf(app.authRepository.getServerBaseUrl()) }
+
+    fun submitOtp(code: String) {
+        if (code.length != 6) {
+            errorMessage = "Введіть рівно 6 цифр коду"
+            return
+        }
+        isLoading = true
+        errorMessage = null
+
+        scope.launch {
+            try {
+                val api = app.apiClient.getApiService()
+                val response = api.exchangeOtpCode(
+                    mapOf(
+                        "otp_code" to code.trim(),
+                        "device_name" to "${Build.MANUFACTURER} ${Build.MODEL}"
+                    )
+                )
+
+                if (response.success && response.data != null) {
+                    val data = response.data
+                    app.authRepository.saveAuth(
+                        deviceToken = data.deviceToken,
+                        masterId = data.masterId,
+                        masterName = data.masterName,
+                        role = data.role
+                    )
+                    // Trigger initial sync
+                    app.syncRepository.performSync()
+                    onLoginSuccess()
+                } else {
+                    errorMessage = response.error?.message ?: "Невірний код авторизації"
+                }
+            } catch (e: Exception) {
+                errorMessage = "Помилка зв'язку: ${e.localizedMessage ?: "Сервер недоступний"}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -53,12 +98,16 @@ fun LoginScreen(
             )
         }
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
+                .navigationBarsPadding()
+                .verticalScroll(scrollState)
                 .padding(24.dp),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -100,7 +149,14 @@ fun LoginScreen(
 
                     OutlinedTextField(
                         value = otpCode,
-                        onValueChange = { if (it.length <= 6) otpCode = it },
+                        onValueChange = { input ->
+                            val digitsOnly = input.filter { it.isDigit() }.take(6)
+                            otpCode = digitsOnly
+                            if (digitsOnly.length == 6 && !isLoading) {
+                                keyboardController?.hide()
+                                submitOtp(digitsOnly)
+                            }
+                        },
                         label = { Text("6-значний код") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -128,43 +184,8 @@ fun LoginScreen(
 
                     Button(
                         onClick = {
-                            if (otpCode.length != 6) {
-                                errorMessage = "Введіть рівно 6 цифр коду"
-                                return@Button
-                            }
-                            isLoading = true
-                            errorMessage = null
-
-                            scope.launch {
-                                try {
-                                    val api = app.apiClient.getApiService()
-                                    val response = api.exchangeOtpCode(
-                                        mapOf(
-                                            "otp_code" to otpCode.trim(),
-                                            "device_name" to "${Build.MANUFACTURER} ${Build.MODEL}"
-                                        )
-                                    )
-
-                                    if (response.success && response.data != null) {
-                                        val data = response.data
-                                        app.authRepository.saveAuth(
-                                            deviceToken = data.deviceToken,
-                                            masterId = data.masterId,
-                                            masterName = data.masterName,
-                                            role = data.role
-                                        )
-                                        // Trigger initial sync
-                                        app.syncRepository.performSync()
-                                        onLoginSuccess()
-                                    } else {
-                                        errorMessage = response.error?.message ?: "Невірний код авторизації"
-                                    }
-                                } catch (e: Exception) {
-                                    errorMessage = "Помилка зв'язку: ${e.localizedMessage ?: "Сервер недоступний"}"
-                                } finally {
-                                    isLoading = false
-                                }
-                            }
+                            keyboardController?.hide()
+                            submitOtp(otpCode)
                         },
                         modifier = Modifier
                             .fillMaxWidth()

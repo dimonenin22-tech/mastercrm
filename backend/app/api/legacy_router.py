@@ -60,6 +60,7 @@ from app.schemas import (
     ScheduleExceptionDto,
     ServiceDto,
     SyncResponseData,
+    VisitBriefDto,
 )
 
 logger = logging.getLogger(__name__)
@@ -607,6 +608,7 @@ async def unified_exec(
         products = await fetch_table(Product)
         reviews = await fetch_table(Review)
         schedules = await fetch_table(Schedule)
+        visit_briefs = await fetch_table(VisitBrief)
 
         # Settings dictionary
         settings_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
@@ -623,6 +625,7 @@ async def unified_exec(
             products=[ProductDto.model_validate(p) for p in products],
             reviews=[ReviewDto.model_validate(r) for r in reviews],
             schedules=[ScheduleDto.model_validate(sch) for sch in schedules],
+            visit_briefs=[VisitBriefDto.model_validate(vb) for vb in visit_briefs],
             settings=settings_map,
             server_sync_time=utc_now().isoformat(),
         )
@@ -899,26 +902,69 @@ async def unified_exec(
         vb_res = await db.execute(vb_stmt)
         vb = vb_res.scalar_one_or_none()
 
+        master_id = body.get("master_id") or (current_master.id if current_master else "m-01")
+        client_id = body.get("client_id", "")
+        if not client_id:
+            apt_obj = await db.get(Appointment, apt_id)
+            if apt_obj:
+                client_id = apt_obj.client_id
+
         if not vb:
             vb = VisitBrief(
                 appointment_id=apt_id,
-                client_id=body.get("client_id", ""),
-                master_id=body.get("master_id", current_master.id),
+                client_id=client_id,
+                master_id=master_id,
                 material_notes=body.get("material_notes", ""),
                 nail_condition=body.get("nail_condition", ""),
                 coffee_prefs=body.get("coffee_prefs", ""),
-                photo_url=body.get("photo_url", "")
+                photo_url=body.get("photo_url", ""),
+                coating_condition=body.get("coating_condition", ""),
+                nail_plate_type=body.get("nail_plate_type", ""),
+                cuticle_type=body.get("cuticle_type", ""),
+                base_gel_used=body.get("base_gel_used", ""),
+                design_and_length=body.get("design_and_length", ""),
+                health_notes=body.get("health_notes", ""),
+                photo_before_url=body.get("photo_before_url", ""),
+                photo_after_url=body.get("photo_after_url", ""),
             )
             db.add(vb)
         else:
-            vb.material_notes = body.get("material_notes", vb.material_notes)
-            vb.nail_condition = body.get("nail_condition", vb.nail_condition)
-            vb.coffee_prefs = body.get("coffee_prefs", vb.coffee_prefs)
-            vb.photo_url = body.get("photo_url", vb.photo_url)
+            if client_id and not vb.client_id:
+                vb.client_id = client_id
+            if "material_notes" in body: vb.material_notes = body["material_notes"]
+            if "nail_condition" in body: vb.nail_condition = body["nail_condition"]
+            if "coffee_prefs" in body: vb.coffee_prefs = body["coffee_prefs"]
+            if "photo_url" in body: vb.photo_url = body["photo_url"]
+            if "coating_condition" in body: vb.coating_condition = body["coating_condition"]
+            if "nail_plate_type" in body: vb.nail_plate_type = body["nail_plate_type"]
+            if "cuticle_type" in body: vb.cuticle_type = body["cuticle_type"]
+            if "base_gel_used" in body: vb.base_gel_used = body["base_gel_used"]
+            if "design_and_length" in body: vb.design_and_length = body["design_and_length"]
+            if "health_notes" in body: vb.health_notes = body["health_notes"]
+            if "photo_before_url" in body: vb.photo_before_url = body["photo_before_url"]
+            if "photo_after_url" in body: vb.photo_after_url = body["photo_after_url"]
             vb.mark_updated()
 
+        # Update client's notes if new diagnostic notes were provided
+        if client_id:
+            c = await db.get(Client, client_id)
+            if c:
+                additions = []
+                if body.get("health_notes"): additions.append(f"Здоров'я: {body['health_notes']}")
+                if body.get("base_gel_used"): additions.append(f"Матеріали: {body['base_gel_used']}")
+                if additions:
+                    summary = " • ".join(additions)
+                    if summary not in (c.notes or ""):
+                        c.notes = f"{c.notes or ''}\n[{utc_now().strftime('%Y-%m-%d')}]: {summary}".strip()
+                        c.mark_updated()
+
         await db.commit()
-        return ApiResponse.ok({"message": "Бриф візиту успішно збережено", "visit_brief_id": vb.id})
+        await db.refresh(vb)
+        return ApiResponse.ok({
+            "message": "Бриф візиту успішно збережено",
+            "visit_brief_id": vb.id,
+            "brief": VisitBriefDto.model_validate(vb).model_dump()
+        })
 
     # 8. Action: client_reset_removal_counter
     if action == "client_reset_removal_counter":
@@ -968,6 +1014,8 @@ async def unified_exec(
     if action == "finance_report":
         from_date = body.get("from_date", "2026-01-01")
         to_date = body.get("to_date", "2026-12-31")
+        m_filter = body.get("master_id") or request.query_params.get("master_id")
+        target_master = m_filter if (m_filter and m_filter not in ["ALL", "all", ""]) else None
 
         # Incomes
         inc_stmt = select(Income).where(
@@ -975,6 +1023,8 @@ async def unified_exec(
             Income.date <= to_date,
             Income.deleted.is_(False)
         )
+        if target_master:
+            inc_stmt = inc_stmt.where(Income.master_id == target_master)
         inc_res = await db.execute(inc_stmt)
         all_incomes = inc_res.scalars().all()
 
@@ -992,6 +1042,8 @@ async def unified_exec(
             Expense.date <= to_date,
             Expense.deleted.is_(False)
         )
+        if target_master:
+            exp_stmt = exp_stmt.where(Expense.master_id == target_master)
         exp_res = await db.execute(exp_stmt)
         all_expenses = exp_res.scalars().all()
 
@@ -1011,6 +1063,8 @@ async def unified_exec(
                 Appointment.status == "COMPLETED",
                 Appointment.deleted.is_(False)
             )
+            if target_master:
+                apts_stmt = apts_stmt.where(Appointment.master_id == target_master)
             completed_apts = (await db.execute(apts_stmt)).scalars().all()
             for c_apt in completed_apts:
                 if c_apt.service_id:
@@ -1026,6 +1080,8 @@ async def unified_exec(
             Appointment.status == "COMPLETED",
             Appointment.deleted.is_(False)
         )
+        if target_master:
+            apt_count_stmt = apt_count_stmt.where(Appointment.master_id == target_master)
         apt_count = (await db.execute(apt_count_stmt)).scalar() or 0
 
         avg_check = (gross_revenue / Decimal(apt_count)) if apt_count > 0 else Decimal("0.00")
@@ -1104,6 +1160,109 @@ async def unified_exec(
         prod.soft_delete()
         await db.commit()
         return ApiResponse.ok({"message": "Матеріал успішно видалено"})
+
+    if action == "product_writeoff":
+        p_id = body.get("product_id")
+        qty = Decimal(str(body.get("quantity", "0.00")))
+        reason = body.get("reason", "Ручне списання матеріалу")
+        if not p_id or qty <= Decimal("0.00"):
+            return ApiResponse.fail("BAD_REQUEST", "product_id та додатна кількість обов'язкові")
+
+        prod_stmt = select(Product).where(Product.id == p_id, Product.deleted.is_(False))
+        if not is_sqlite:
+            prod_stmt = prod_stmt.with_for_update()
+        prod_res = await db.execute(prod_stmt)
+        prod = prod_res.scalar_one_or_none()
+        if not prod:
+            return ApiResponse.fail("NOT_FOUND", "Матеріал не знайдено")
+
+        prod.current_stock -= qty
+        prod.mark_updated()
+        mov = StockMovement(
+            product_id=p_id,
+            type="MANUAL_DEDUCTION",
+            quantity=-qty,
+            comment=reason
+        )
+        db.add(mov)
+
+        # Check low stock alert
+        if prod.current_stock <= prod.min_stock_alert:
+            try:
+                from app.bot.bot_instance import bot
+                if bot:
+                    owner_stmt = select(Master).where(
+                        Master.role == "owner",
+                        Master.deleted.is_(False),
+                        Master.telegram_chat_id.isnot(None)
+                    )
+                    owners = (await db.execute(owner_stmt)).scalars().all()
+                    alert_msg = (
+                        f"⚠️ <b>Закінчується матеріал на складі:</b> {prod.name} "
+                        f"(Залишок: {prod.current_stock} {prod.unit})!\n"
+                        f"Причина списання: {html.escape(reason)}"
+                    )
+                    for owner in owners:
+                        if owner.telegram_chat_id:
+                            await bot.send_message(chat_id=owner.telegram_chat_id, text=alert_msg, parse_mode="HTML")
+            except Exception as alert_err:
+                logger.warning("Failed to send low stock alert: %s", alert_err)
+
+        await db.commit()
+        return ApiResponse.ok({
+            "message": "Матеріал успішно списано",
+            "product_id": p_id,
+            "current_stock": float(prod.current_stock),
+            "deducted": float(qty)
+        })
+
+    if action == "service_consumables_get":
+        s_id = body.get("service_id") or request.query_params.get("service_id")
+        if not s_id:
+            return ApiResponse.fail("BAD_REQUEST", "service_id є обов'язковим")
+        sc_stmt = (
+            select(ServiceConsumable)
+            .options(selectinload(ServiceConsumable.product))
+            .where(ServiceConsumable.service_id == s_id, ServiceConsumable.deleted.is_(False))
+        )
+        sc_res = await db.execute(sc_stmt)
+        consumables = sc_res.scalars().all()
+        return ApiResponse.ok([
+            {
+                "id": c.id,
+                "product_id": c.product_id,
+                "product_name": c.product.name if c.product else "",
+                "quantity_per_service": float(c.quantity_per_service),
+                "unit": c.product.unit if c.product else "шт",
+            }
+            for c in consumables
+        ])
+
+    if action == "service_consumables_set":
+        s_id = body.get("service_id")
+        items = body.get("consumables", [])
+        if not s_id:
+            return ApiResponse.fail("BAD_REQUEST", "service_id є обов'язковим")
+        srv = await db.get(Service, s_id)
+        if not srv or srv.deleted:
+            return ApiResponse.fail("NOT_FOUND", "Послугу не знайдено")
+
+        old_stmt = select(ServiceConsumable).where(ServiceConsumable.service_id == s_id)
+        old_items = (await db.execute(old_stmt)).scalars().all()
+        for old in old_items:
+            await db.delete(old)
+
+        for item in items:
+            p_id = item.get("product_id")
+            q = Decimal(str(item.get("quantity_per_service", "1.00")))
+            if p_id and q > Decimal("0.00"):
+                db.add(ServiceConsumable(
+                    service_id=s_id,
+                    product_id=p_id,
+                    quantity_per_service=q
+                ))
+        await db.commit()
+        return ApiResponse.ok({"message": "Норми витрат послуги успішно оновлено", "service_id": s_id})
 
     # 11. Action: services CRUD
     if action == "service_create":

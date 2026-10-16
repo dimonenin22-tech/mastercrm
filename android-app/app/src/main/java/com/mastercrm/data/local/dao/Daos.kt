@@ -15,6 +15,7 @@ import com.mastercrm.data.local.entity.OutboxMutationEntity
 import com.mastercrm.data.local.entity.ProductEntity
 import com.mastercrm.data.local.entity.ReviewEntity
 import com.mastercrm.data.local.entity.ServiceEntity
+import com.mastercrm.data.local.entity.VisitBriefEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -27,6 +28,9 @@ interface AppointmentDao {
 
     @Query("SELECT * FROM appointments WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AppointmentEntity?
+
+    @Query("SELECT * FROM appointments WHERE clientId = :clientId AND deleted = 0 ORDER BY date DESC, startTime DESC")
+    fun getByClientIdFlow(clientId: String): Flow<List<AppointmentEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(appointment: AppointmentEntity)
@@ -174,4 +178,25 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM outbox_queue")
     fun getPendingCountFlow(): Flow<Int>
+}
+
+@Dao
+interface VisitBriefDao {
+    @Query("SELECT * FROM visit_briefs WHERE appointmentId = :appointmentId LIMIT 1")
+    suspend fun getByAppointmentId(appointmentId: String): VisitBriefEntity?
+
+    @Query("SELECT * FROM visit_briefs WHERE clientId = :clientId AND deleted = 0 ORDER BY updatedAt DESC")
+    fun getByClientIdFlow(clientId: String): Flow<List<VisitBriefEntity>>
+
+    @Query("SELECT * FROM visit_briefs WHERE clientId = :clientId AND deleted = 0 ORDER BY updatedAt DESC")
+    suspend fun getByClientIdList(clientId: String): List<VisitBriefEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(brief: VisitBriefEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateAll(briefs: List<VisitBriefEntity>)
+
+    @Query("DELETE FROM visit_briefs WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

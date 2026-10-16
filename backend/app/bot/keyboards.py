@@ -146,6 +146,18 @@ def get_review_rating_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[row])
 
 
+def get_wear_check_keyboard(appointment_id: str, has_future_booking: bool) -> InlineKeyboardMarkup:
+    stars_row = [
+        InlineKeyboardButton(text=f"{score} ⭐", callback_data=f"review_{appointment_id}_{score}")
+        for score in range(1, 6)
+    ]
+    rows = [stars_row]
+    if not has_future_booking:
+        rows.append([InlineKeyboardButton(text="📅 Записатися завчасно", callback_data="booking:start")])
+    rows.append([InlineKeyboardButton(text="📸 Надіслати відгук / фото нігтів", callback_data=f"wear_fb:{appointment_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def get_master_requests_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

@@ -154,7 +154,38 @@ data class SyncResponseDto(
     @SerializedName("reviews") val reviews: List<ReviewDto>?,
     @SerializedName("settings") val settings: Map<String, String>?,
     @SerializedName("schedules") val schedules: List<ScheduleDto>?,
+    @SerializedName("visit_briefs") val visitBriefs: List<VisitBriefDto>?,
     @SerializedName("server_sync_time") val serverSyncTime: String
+)
+
+data class VisitBriefDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("appointment_id") val appointmentId: String,
+    @SerializedName("client_id") val clientId: String,
+    @SerializedName("master_id") val masterId: String,
+    @SerializedName("material_notes") val materialNotes: String?,
+    @SerializedName("nail_condition") val nailCondition: String?,
+    @SerializedName("coffee_prefs") val coffeePrefs: String?,
+    @SerializedName("photo_url") val photoUrl: String?,
+    @SerializedName("coating_condition") val coatingCondition: String?,
+    @SerializedName("nail_plate_type") val nailPlateType: String?,
+    @SerializedName("cuticle_type") val cuticleType: String?,
+    @SerializedName("base_gel_used") val baseGelUsed: String?,
+    @SerializedName("design_and_length") val designAndLength: String?,
+    @SerializedName("health_notes") val healthNotes: String?,
+    @SerializedName("photo_before_url") val photoBeforeUrl: String?,
+    @SerializedName("photo_after_url") val photoAfterUrl: String?,
+    @SerializedName("deleted") val deleted: Boolean = false,
+    @SerializedName("version") val version: Int = 1,
+    @SerializedName("updated_at") val updatedAt: String = ""
+)
+
+data class ServiceConsumableItemDto(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("product_id") val productId: String,
+    @SerializedName("product_name") val productName: String = "",
+    @SerializedName("quantity_per_service") val quantityPerService: Double = 1.0,
+    @SerializedName("unit") val unit: String = "шт"
 )
 
 data class FinanceReportDto(

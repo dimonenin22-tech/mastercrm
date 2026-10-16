@@ -274,6 +274,37 @@ class SyncRepository(
                 }
             }
 
+            // 11. Process VisitBriefs
+            data.visitBriefs?.forEach { dto ->
+                if (dto.deleted) {
+                    db.visitBriefDao().deleteById(dto.id)
+                } else {
+                    db.visitBriefDao().insertOrUpdate(
+                        VisitBriefEntity(
+                            id = dto.id,
+                            appointmentId = dto.appointmentId,
+                            clientId = dto.clientId,
+                            masterId = dto.masterId,
+                            materialNotes = dto.materialNotes,
+                            nailCondition = dto.nailCondition,
+                            coffeePrefs = dto.coffeePrefs,
+                            photoUrl = dto.photoUrl,
+                            coatingCondition = dto.coatingCondition,
+                            nailPlateType = dto.nailPlateType,
+                            cuticleType = dto.cuticleType,
+                            baseGelUsed = dto.baseGelUsed,
+                            designAndLength = dto.designAndLength,
+                            healthNotes = dto.healthNotes,
+                            photoBeforeUrl = dto.photoBeforeUrl,
+                            photoAfterUrl = dto.photoAfterUrl,
+                            deleted = dto.deleted,
+                            version = dto.version,
+                            updatedAt = dto.updatedAt
+                        )
+                    )
+                }
+            }
+
             // Save server sync time checkpoint
             authRepository.saveLastSyncTime(data.serverSyncTime)
             Result.success(data)
