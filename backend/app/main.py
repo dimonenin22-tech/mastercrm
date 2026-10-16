@@ -179,6 +179,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if bot:
         dp.include_router(client_router)
         dp.include_router(master_router)
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+        except Exception as e:
+            logger.warning("Could not delete webhook: %s", e)
         logger.info("Starting aiogram Telegram bot polling...")
         bot_task = asyncio.create_task(dp.start_polling(bot))
 
@@ -216,7 +220,7 @@ app.add_middleware(
 app.include_router(api_router)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "app": settings.PROJECT_NAME,
