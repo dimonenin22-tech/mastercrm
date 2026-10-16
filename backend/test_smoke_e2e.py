@@ -171,6 +171,12 @@ async def run_smoke_e2e():
         # STEP 4: GET /exec?action=slots_get&master_id=m-01&service_id=<id>&date=2026-12-10
         # ====================================================================
         target_date = "2026-12-10"
+        async with AsyncSessionLocal() as db:
+            del_stmt = select(Appointment).where(Appointment.master_id == "m-01", Appointment.date == target_date, Appointment.deleted.is_(False))
+            for old_apt in (await db.execute(del_stmt)).scalars().all():
+                old_apt.soft_delete()
+            await db.commit()
+
         try:
             url4 = f"/exec?action=slots_get&master_id=m-01&service_id={created_service_id}&date={target_date}"
             res4 = await client.get(url4, headers=headers)

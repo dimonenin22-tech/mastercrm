@@ -128,6 +128,9 @@ class SyncRepository(
                             totalSpent = dto.totalSpent,
                             visitsSinceLastRemoval = dto.visitsSinceLastRemoval,
                             lastRemovalDate = dto.lastRemovalDate,
+                            noShowCount = dto.noShowCount,
+                            isBlacklisted = dto.isBlacklisted,
+                            discountPercent = dto.discountPercent,
                             deleted = dto.deleted,
                             version = dto.version,
                             updatedAt = dto.updatedAt

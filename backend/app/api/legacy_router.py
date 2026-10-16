@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import secrets
@@ -7,7 +8,10 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+import base64
+import os
+import uuid
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,19 +20,27 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db, is_sqlite
 from app.models import (
     Appointment,
+    AppointmentHistory,
     Client,
     Device,
     Expense,
     Income,
     Master,
     NotificationLog,
+    Photo,
     Product,
+    ReminderTemplate,
     Review,
+    Schedule,
+    ScheduleException,
     Service,
     ServiceCategory,
     ServiceConsumable,
+    ServiceResource,
+    SharedResource,
     StockMovement,
     StudioSetting,
+    Supplier,
     VisitBrief,
     WaitingList,
     utc_now,
@@ -40,8 +52,12 @@ from app.schemas import (
     ExpenseDto,
     IncomeDto,
     MasterDto,
+    PhotoDto,
     ProductDto,
+    ReminderTemplateDto,
     ReviewDto,
+    ScheduleDto,
+    ScheduleExceptionDto,
     ServiceDto,
     SyncResponseData,
 )
@@ -88,6 +104,24 @@ def time_to_minutes(t_str: str) -> int:
         return 0
 
 
+async def calculate_service_cost(service_id: str, db: AsyncSession) -> Decimal:
+    try:
+        c_stmt = (
+            select(ServiceConsumable)
+            .options(selectinload(ServiceConsumable.product))
+            .where(ServiceConsumable.service_id == service_id)
+        )
+        c_res = await db.execute(c_stmt)
+        consumables = c_res.scalars().all()
+        total_cost = Decimal("0.00")
+        for item in consumables:
+            if item.product and not item.product.deleted:
+                total_cost += item.quantity_per_service * item.product.purchase_price
+        return total_cost
+    except Exception:
+        return Decimal("0.00")
+
+
 async def notify_waiting_list_clients(db: AsyncSession, target_date: str, service_title: str) -> None:
     try:
         from app.bot.bot_instance import bot
@@ -118,13 +152,183 @@ async def notify_waiting_list_clients(db: AsyncSession, target_date: str, servic
         logger.error("Error notifying waiting list: %s", e)
 
 
+async def render_public_landing_page() -> str:
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        # Settings
+        s_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
+        settings_map = {s.key: s.value for s in s_res.scalars().all()}
+
+        studio_name = settings_map.get("studio_name", "MasterCRM Beauty Studio")
+        address = settings_map.get("address", "вул. Хрещатик, 1, оф. 10, Київ")
+        phone = settings_map.get("phone", "+380 (99) 123-45-67")
+        instagram = settings_map.get("instagram", "@master_crm_beauty")
+        bot_username = settings_map.get("bot_username", "master_crm_bot").replace("@", "")
+
+        # Owner master
+        m_res = await db.execute(select(Master).where(Master.role == "owner", Master.deleted.is_(False)))
+        owner = m_res.scalars().first()
+        master_name = owner.name if owner else "Топ-Майстер"
+        specialization = owner.specialization if owner else "Топ-Майстер / Власниця"
+
+        # Active services
+        srv_res = await db.execute(
+            select(Service)
+            .options(selectinload(Service.category))
+            .where(Service.deleted.is_(False), Service.is_active.is_(True))
+        )
+        services = srv_res.scalars().all()
+
+        # Approved reviews
+        rev_res = await db.execute(
+            select(Review)
+            .options(selectinload(Review.client))
+            .where(Review.is_published.is_(True), Review.moderation_status == "APPROVED", Review.deleted.is_(False))
+            .order_by(Review.created_at.desc())
+            .limit(10)
+        )
+        reviews = rev_res.scalars().all()
+
+    # Build services HTML
+    services_html = ""
+    for s in services:
+        cat_icon = s.category.icon_emoji if s.category else "💅"
+        book_link = f"https://t.me/{bot_username}?start=srv_{s.id}"
+        services_html += f"""
+        <div class="service-card">
+            <div class="service-info">
+                <h3>{cat_icon} {html.escape(s.title)}</h3>
+                <span class="duration">⏱️ {s.duration_minutes} хв</span>
+            </div>
+            <div class="service-action">
+                <span class="price">{int(s.price)} грн</span>
+                <a href="{book_link}" class="btn-book" target="_blank">Записатись ⚡</a>
+            </div>
+        </div>
+        """
+
+    # Build reviews HTML
+    reviews_html = ""
+    if reviews:
+        for r in reviews:
+            stars = "⭐" * r.rating
+            c_name = r.client.first_name if r.client else "Клієнт"
+            reviews_html += f"""
+            <div class="review-card">
+                <div class="review-header">
+                    <span class="client-name">{html.escape(c_name)}</span>
+                    <span class="stars">{stars}</span>
+                </div>
+                <p class="comment">{html.escape(r.comment or 'Чудовий сервіс та бездоганний манікюр!')}</p>
+            </div>
+            """
+    else:
+        reviews_html = '<div class="empty-state" style="color: #94a3b8; font-size: 13px; text-align: center; padding: 16px;">Поки немає опублікованих відгуків. Будьте першими!</div>'
+
+    bot_link = f"https://t.me/{bot_username}"
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={bot_link}"
+
+    return f"""<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{html.escape(studio_name)} — Онлайн-запис</title>
+    <style>
+        :root {{
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --border: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #ec4899;
+            --accent-hover: #db2777;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+        body {{ background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; padding: 24px 16px; line-height: 1.5; }}
+        .container {{ max-width: 680px; margin: 0 auto; }}
+        .header {{ text-align: center; padding: 32px 0 24px; }}
+        .avatar {{ width: 88px; height: 88px; border-radius: 50%; background: linear-gradient(135deg, #ec4899, #8b5cf6); margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 38px; box-shadow: 0 10px 25px -5px rgba(236, 72, 153, 0.4); }}
+        h1 {{ font-size: 26px; font-weight: 800; margin-bottom: 6px; }}
+        .subtitle {{ color: var(--accent); font-size: 15px; font-weight: 600; margin-bottom: 12px; }}
+        .contacts {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; color: var(--text-muted); font-size: 13px; margin-top: 8px; }}
+        .badge {{ background: var(--border); padding: 4px 10px; border-radius: 16px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: inherit; }}
+        .section-title {{ font-size: 18px; font-weight: 700; margin: 32px 0 16px; display: flex; align-items: center; gap: 8px; color: var(--text-main); border-bottom: 1px solid var(--border); padding-bottom: 8px; }}
+        .services-list {{ display: flex; flex-direction: column; gap: 12px; }}
+        .service-card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; justify-content: space-between; align-items: center; transition: transform 0.15s, border-color 0.15s; }}
+        .service-card:hover {{ transform: translateY(-2px); border-color: var(--accent); }}
+        .service-info h3 {{ font-size: 15px; font-weight: 600; margin-bottom: 4px; }}
+        .duration {{ font-size: 12px; color: var(--text-muted); }}
+        .service-action {{ display: flex; align-items: center; gap: 12px; }}
+        .price {{ font-size: 16px; font-weight: 700; color: var(--accent); }}
+        .btn-book {{ background: var(--accent); color: white; text-decoration: none; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; transition: background 0.15s; }}
+        .btn-book:hover {{ background: var(--accent-hover); }}
+        .reviews-list {{ display: grid; gap: 12px; }}
+        .review-card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }}
+        .review-header {{ display: flex; justify-content: space-between; margin-bottom: 6px; }}
+        .client-name {{ font-weight: 600; font-size: 14px; }}
+        .stars {{ font-size: 12px; }}
+        .comment {{ font-size: 13px; color: var(--text-muted); }}
+        .qr-section {{ text-align: center; margin: 40px 0 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }}
+        .qr-img {{ border-radius: 12px; background: white; padding: 8px; margin: 12px 0; width: 140px; height: 140px; }}
+        .footer {{ text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="avatar">💅</div>
+            <h1>{html.escape(studio_name)}</h1>
+            <div class="subtitle">{html.escape(master_name)} • {html.escape(specialization)}</div>
+            <div class="contacts">
+                <span class="badge">📍 {html.escape(address)}</span>
+                <span class="badge">📞 {html.escape(phone)}</span>
+                <a href="https://instagram.com/{instagram.replace('@', '')}" target="_blank" class="badge">📸 {html.escape(instagram)}</a>
+            </div>
+        </div>
+
+        <div class="section-title">📋 Прайс та швидкий запис онлайн</div>
+        <div class="services-list">
+            {services_html}
+        </div>
+
+        <div class="section-title">💬 Відгуки наших клієнтів</div>
+        <div class="reviews-list">
+            {reviews_html}
+        </div>
+
+        <div class="qr-section">
+            <h3 style="font-size: 16px; margin-bottom: 4px;">Швидкий перехід у Telegram Бот</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">Відскануйте QR-код камерою смартфона для миттєвого запису</p>
+            <img src="{qr_url}" alt="Telegram Bot QR" class="qr-img">
+            <div>
+                <a href="{bot_link}" target="_blank" class="btn-book" style="display: inline-block; margin-top: 8px;">Відкрити в Telegram ✈️</a>
+            </div>
+        </div>
+
+        <div class="footer">
+            Powered by <b>MasterCRM v2.0</b> • Автоматизована екосистема краси
+        </div>
+    </div>
+</body>
+</html>"""
+
+
 @router.api_route("/exec", methods=["GET", "POST"])
 async def unified_exec(
     request: Request,
-    action: str = Query(..., description="Action name to execute"),
+    action: Optional[str] = Query(None, description="Action name to execute"),
     db: AsyncSession = Depends(get_db),
     current_master: Optional[Master] = Depends(get_current_master),
 ) -> Any:
+    # Handle direct browser visits to /exec without action parameter
+    if not action:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content=await render_public_landing_page())
+        return ApiResponse.ok({"server": "MasterCRM v2.0", "status": "online", "docs": "/docs"})
+
     # 1. Parse request body if available
     body: dict[str, Any] = {}
     if request.method == "POST":
@@ -143,7 +347,7 @@ async def unified_exec(
         return ApiResponse.ok({"pong": True, "time": utc_now().isoformat(), "server": "MasterCRM v2.0"})
 
     if action == "auth_exchange_code":
-        otp = str(body.get("otp_code", "")).strip()
+        otp = str(body.get("otp_code") or body.get("code") or "").strip()
         device_name = str(body.get("device_name", "Android Device")).strip()
         if not otp:
             return ApiResponse.fail("INVALID_CODE", "OTP-код обов'язковий")
@@ -193,7 +397,7 @@ async def unified_exec(
             }
         })
 
-    # Public / accessible action: slots_get
+    # Public / accessible action: slots_get (Smart Slot Engine)
     if action == "slots_get":
         master_id = body.get("master_id") or (current_master.id if current_master else "m-01")
         service_id = body.get("service_id")
@@ -208,7 +412,56 @@ async def unified_exec(
 
         duration_with_buffer = srv.duration_minutes + srv.buffer_minutes
 
-        # Query existing appointments for this master and date
+        # 1. Working Hours from Schedule & ScheduleException
+        day_start = 9 * 60   # 09:00 default
+        day_end = 19 * 60    # 19:00 default
+        slot_step = 30
+
+        exc_stmt = select(ScheduleException).where(
+            ScheduleException.master_id == master_id,
+            ScheduleException.date == date_str,
+            ScheduleException.deleted.is_(False)
+        )
+        exc_res = await db.execute(exc_stmt)
+        sched_exc = exc_res.scalar_one_or_none()
+
+        if sched_exc and sched_exc.is_day_off:
+            return ApiResponse.ok({
+                "master_id": master_id,
+                "service_id": service_id,
+                "date": date_str,
+                "available_slots": [],
+            })
+
+        if sched_exc and sched_exc.start_time and sched_exc.end_time:
+            day_start = time_to_minutes(sched_exc.start_time)
+            day_end = time_to_minutes(sched_exc.end_time)
+        else:
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                weekday = date_obj.weekday()
+                sched_stmt = select(Schedule).where(
+                    Schedule.master_id == master_id,
+                    Schedule.day_of_week == weekday,
+                    Schedule.deleted.is_(False)
+                )
+                sched_res = await db.execute(sched_stmt)
+                sched = sched_res.scalar_one_or_none()
+                if sched:
+                    if not sched.is_working_day:
+                        return ApiResponse.ok({
+                            "master_id": master_id,
+                            "service_id": service_id,
+                            "date": date_str,
+                            "available_slots": [],
+                        })
+                    day_start = time_to_minutes(sched.start_time)
+                    day_end = time_to_minutes(sched.end_time)
+                    slot_step = sched.slot_step_minutes or 30
+            except Exception:
+                pass
+
+        # 2. Query existing appointments for this master and date
         stmt = (
             select(Appointment)
             .where(
@@ -229,29 +482,69 @@ async def unified_exec(
             e_min = time_to_minutes(apt.end_time)
             occupied_intervals.append((s_min, e_min))
 
-        # Generate slots 09:00 to 19:00 with step 30 min
-        available_slots = []
-        day_start = 9 * 60   # 09:00
-        day_end = 19 * 60    # 19:00
+        # 3. SharedResource checks in STUDIO mode
+        app_mode_res = await db.execute(select(StudioSetting).where(StudioSetting.key == "app_mode"))
+        app_mode_setting = app_mode_res.scalar_one_or_none()
+        is_studio_mode = app_mode_setting and app_mode_setting.value == "STUDIO"
 
+        shared_resource_max = 999
+        shared_service_ids = []
+        if is_studio_mode:
+            sr_stmt = (
+                select(ServiceResource)
+                .options(selectinload(ServiceResource.resource))
+                .where(ServiceResource.service_id == service_id, ServiceResource.deleted.is_(False))
+            )
+            sr = (await db.execute(sr_stmt)).scalar_one_or_none()
+            if sr and sr.resource and not sr.resource.deleted:
+                shared_resource_max = sr.resource.quantity
+                all_sr_stmt = select(ServiceResource.service_id).where(
+                    ServiceResource.resource_id == sr.resource_id,
+                    ServiceResource.deleted.is_(False)
+                )
+                shared_service_ids = list((await db.execute(all_sr_stmt)).scalars().all())
+
+        resource_occupied_intervals = []
+        if shared_service_ids and shared_resource_max < 999:
+            all_m_stmt = select(Appointment).where(
+                Appointment.service_id.in_(shared_service_ids),
+                Appointment.date == date_str,
+                Appointment.deleted.is_(False),
+                Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"]),
+                Appointment.start_time != "За домовленістю"
+            )
+            for a in (await db.execute(all_m_stmt)).scalars().all():
+                resource_occupied_intervals.append((time_to_minutes(a.start_time), time_to_minutes(a.end_time)))
+
+        # 4. Generate candidate slots
+        available_slots = []
         current_min = day_start
         while current_min + srv.duration_minutes <= day_end:
             slot_start = current_min
             slot_end = current_min + duration_with_buffer
             
-            # Check overlap: (slot_start < apt_end) and (slot_end > apt_start)
+            # Check master overlap: (slot_start < apt_end) and (slot_end > apt_start)
             conflict = False
             for apt_start, apt_end in occupied_intervals:
                 if slot_start < apt_end and slot_end > apt_start:
                     conflict = True
                     break
 
+            # Check shared resource capacity
+            if not conflict and shared_service_ids and shared_resource_max < 999:
+                concurrent_count = 0
+                for r_start, r_end in resource_occupied_intervals:
+                    if slot_start < r_end and slot_end > r_start:
+                        concurrent_count += 1
+                if concurrent_count >= shared_resource_max:
+                    conflict = True
+
             if not conflict:
                 h = current_min // 60
                 m = current_min % 60
                 available_slots.append(f"{h:02d}:{m:02d}")
 
-            current_min += 30
+            current_min += slot_step
 
         return ApiResponse.ok({
             "master_id": master_id,
@@ -259,6 +552,27 @@ async def unified_exec(
             "date": date_str,
             "available_slots": available_slots,
         })
+
+    # Public action: reviews_public
+    if action == "reviews_public":
+        rev_stmt = (
+            select(Review)
+            .options(selectinload(Review.client))
+            .where(Review.is_published.is_(True), Review.moderation_status == "APPROVED", Review.deleted.is_(False))
+            .order_by(Review.created_at.desc())
+            .limit(20)
+        )
+        revs = (await db.execute(rev_stmt)).scalars().all()
+        return ApiResponse.ok([
+            {
+                "id": r.id,
+                "rating": r.rating,
+                "comment": r.comment,
+                "client_name": r.client.first_name if r.client else "Клієнт",
+                "created_at": r.created_at.isoformat() if r.created_at else ""
+            }
+            for r in revs
+        ])
 
     # Protected actions: require valid current_master
     if not current_master:
@@ -292,6 +606,7 @@ async def unified_exec(
         expenses = await fetch_table(Expense)
         products = await fetch_table(Product)
         reviews = await fetch_table(Review)
+        schedules = await fetch_table(Schedule)
 
         # Settings dictionary
         settings_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
@@ -307,6 +622,7 @@ async def unified_exec(
             expenses=[ExpenseDto.model_validate(e) for e in expenses],
             products=[ProductDto.model_validate(p) for p in products],
             reviews=[ReviewDto.model_validate(r) for r in reviews],
+            schedules=[ScheduleDto.model_validate(sch) for sch in schedules],
             settings=settings_map,
             server_sync_time=utc_now().isoformat(),
         )
@@ -368,6 +684,43 @@ async def unified_exec(
                             content=ApiResponse.fail("RESOURCE_BUSY", "Вибраний час уже зайнятий іншим клієнтом").model_dump()
                         )
 
+                # Check shared resource capacity in STUDIO mode
+                app_mode_res = await db.execute(select(StudioSetting).where(StudioSetting.key == "app_mode"))
+                app_mode_setting = app_mode_res.scalar_one_or_none()
+                if app_mode_setting and app_mode_setting.value == "STUDIO":
+                    sr_stmt = (
+                        select(ServiceResource)
+                        .options(selectinload(ServiceResource.resource))
+                        .where(ServiceResource.service_id == s_id, ServiceResource.deleted.is_(False))
+                    )
+                    sr = (await db.execute(sr_stmt)).scalar_one_or_none()
+                    if sr and sr.resource and not sr.resource.deleted:
+                        shared_resource_max = sr.resource.quantity
+                        all_sr_stmt = select(ServiceResource.service_id).where(
+                            ServiceResource.resource_id == sr.resource_id,
+                            ServiceResource.deleted.is_(False)
+                        )
+                        shared_service_ids = list((await db.execute(all_sr_stmt)).scalars().all())
+                        if shared_service_ids:
+                            all_m_stmt = select(Appointment).where(
+                                Appointment.service_id.in_(shared_service_ids),
+                                Appointment.date == date_str,
+                                Appointment.deleted.is_(False),
+                                Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"]),
+                                Appointment.start_time != "За домовленістю"
+                            )
+                            concurrent_count = 0
+                            for a in (await db.execute(all_m_stmt)).scalars().all():
+                                a_s = time_to_minutes(a.start_time)
+                                a_e = time_to_minutes(a.end_time)
+                                if slot_s < a_e and slot_e > a_s:
+                                    concurrent_count += 1
+                            if concurrent_count >= shared_resource_max:
+                                return JSONResponse(
+                                    status_code=status.HTTP_409_CONFLICT,
+                                    content=ApiResponse.fail("RESOURCE_BUSY", f"Спільне обладнання «{sr.resource.name}» повністю зайняте на цей час").model_dump()
+                                )
+
             # Client resolution
             if not c_id:
                 c_phone = body.get("client_phone", "+380000000000")
@@ -399,6 +752,18 @@ async def unified_exec(
                 cancellation_reason=""
             )
             db.add(new_apt)
+            await db.flush()
+
+            # Audit history record
+            history = AppointmentHistory(
+                appointment_id=new_apt.id,
+                previous_status="NONE",
+                new_status=new_apt.status,
+                changed_by="master" if current_master else "system",
+                comment="Створення запису"
+            )
+            db.add(history)
+
             await db.commit()
             await db.refresh(new_apt)
             return ApiResponse.ok(AppointmentDto.model_validate(new_apt).model_dump())
@@ -428,6 +793,24 @@ async def unified_exec(
             apt.cancellation_reason = reason
         apt.mark_updated()
 
+        # Audit history record
+        history = AppointmentHistory(
+            appointment_id=apt.id,
+            previous_status=old_status,
+            new_status=new_status,
+            changed_by="master" if current_master else "system",
+            comment=reason or ""
+        )
+        db.add(history)
+
+        # NO_SHOW blacklist automation
+        if new_status == "NO_SHOW" and old_status != "NO_SHOW":
+            if apt.client and not apt.client.deleted:
+                apt.client.no_show_count += 1
+                if apt.client.no_show_count >= 2:
+                    apt.client.is_blacklisted = True
+                apt.client.mark_updated()
+
         # COMPLETED logic
         if new_status == "COMPLETED" and old_status != "COMPLETED":
             # 1. Deduct consumables
@@ -451,6 +834,27 @@ async def unified_exec(
                             comment=f"Списання за запис {apt.id}"
                         )
                         db.add(movement)
+
+                        # Low-stock alert check
+                        if item.product.current_stock <= item.product.min_stock_alert:
+                            try:
+                                from app.bot.bot_instance import bot
+                                if bot:
+                                    owner_stmt = select(Master).where(
+                                        Master.role == "owner",
+                                        Master.deleted.is_(False),
+                                        Master.telegram_chat_id.isnot(None)
+                                    )
+                                    owners = (await db.execute(owner_stmt)).scalars().all()
+                                    alert_msg = (
+                                        f"⚠️ <b>Закінчується матеріал на складі:</b> {item.product.name} "
+                                        f"(Залишок: {item.product.current_stock} {item.product.unit})!"
+                                    )
+                                    for owner in owners:
+                                        if owner.telegram_chat_id:
+                                            await bot.send_message(chat_id=owner.telegram_chat_id, text=alert_msg, parse_mode="HTML")
+                            except Exception as alert_err:
+                                logger.warning("Failed to send low stock alert: %s", alert_err)
 
             # 2. Create Income strictly once
             inc_stmt = select(Income).where(Income.appointment_id == apt.id, Income.deleted.is_(False))
@@ -598,6 +1002,19 @@ async def unified_exec(
                 materials_cogs += e.amount
             else:
                 direct_expenses += e.amount
+
+        # Calculate materials COGS from consumables for completed appointments if no direct materials expense
+        if materials_cogs == Decimal("0.00"):
+            apts_stmt = select(Appointment).where(
+                Appointment.date >= from_date,
+                Appointment.date <= to_date,
+                Appointment.status == "COMPLETED",
+                Appointment.deleted.is_(False)
+            )
+            completed_apts = (await db.execute(apts_stmt)).scalars().all()
+            for c_apt in completed_apts:
+                if c_apt.service_id:
+                    materials_cogs += await calculate_service_cost(c_apt.service_id, db)
 
         total_expenses = direct_expenses + materials_cogs
         net_profit = (gross_revenue + tips) - total_expenses
@@ -843,5 +1260,222 @@ async def unified_exec(
         rev.mark_updated()
         await db.commit()
         return ApiResponse.ok({"message": "Статус відгуку оновлено", "review_id": rev_id})
+
+    # 15. Action: finance_export_csv (owner only)
+    if action == "finance_export_csv":
+        if current_master.role != "owner":
+            return ApiResponse.fail("FORBIDDEN", "Лише власник має доступ до експорту фінансів")
+        from_date = body.get("from_date", "2026-01-01")
+        to_date = body.get("to_date", "2026-12-31")
+        import csv
+        import io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Type", "Date", "Category", "Amount", "Payment Method", "Description/Client"])
+
+        inc_stmt = (
+            select(Income)
+            .where(Income.date >= from_date, Income.date <= to_date, Income.deleted.is_(False))
+            .order_by(Income.date.asc())
+        )
+        for inc in (await db.execute(inc_stmt)).scalars().all():
+            client_name = ""
+            if inc.client_id:
+                cl = await db.get(Client, inc.client_id)
+                if cl:
+                    client_name = f"{cl.first_name} {cl.last_name or ''}".strip()
+            writer.writerow(["INCOME", inc.date, inc.category, str(inc.amount), inc.payment_method, client_name])
+
+        exp_stmt = select(Expense).where(
+            Expense.date >= from_date, Expense.date <= to_date, Expense.deleted.is_(False)
+        ).order_by(Expense.date.asc())
+        for exp in (await db.execute(exp_stmt)).scalars().all():
+            writer.writerow(["EXPENSE", exp.date, exp.category, str(exp.amount), exp.payment_method, exp.description])
+
+        csv_content = output.getvalue()
+        if request.query_params.get("format") == "raw" or "text/csv" in request.headers.get("accept", ""):
+            return Response(
+                content=csv_content,
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename=finance_report_{from_date}_{to_date}.csv"}
+            )
+        return ApiResponse.ok({
+            "csv": csv_content,
+            "from_date": from_date,
+            "to_date": to_date
+        })
+
+    # 16. Action: photo_upload
+    if action == "photo_upload":
+        c_id = body.get("client_id")
+        apt_id = body.get("appointment_id")
+        photo_type = body.get("photo_type", "AFTER")
+        b64_data = body.get("image_base64")
+        filename = body.get("filename") or f"photo_{uuid.uuid4().hex[:8]}.jpg"
+
+        if not c_id:
+            return ApiResponse.fail("BAD_REQUEST", "client_id обов'язковий")
+
+        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, filename)
+
+        if b64_data:
+            if "," in b64_data:
+                b64_data = b64_data.split(",", 1)[1]
+            with open(file_path, "wb") as f:
+                f.write(base64.b64decode(b64_data))
+
+        file_url = f"/uploads/{filename}"
+        photo = Photo(
+            client_id=c_id,
+            appointment_id=apt_id,
+            photo_type=photo_type,
+            file_url=file_url,
+            thumbnail_url=file_url
+        )
+        db.add(photo)
+        await db.commit()
+        await db.refresh(photo)
+        return ApiResponse.ok(PhotoDto.model_validate(photo).model_dump())
+
+    # 17. Action: schedule_get
+    if action == "schedule_get":
+        m_id = body.get("master_id") or current_master.id
+        s_stmt = select(Schedule).where(Schedule.master_id == m_id, Schedule.deleted.is_(False)).order_by(Schedule.day_of_week.asc())
+        schedules = (await db.execute(s_stmt)).scalars().all()
+
+        if not schedules:
+            schedules = []
+            for dow in range(7):
+                is_work = dow < 5  # Mon-Fri
+                sch = Schedule(
+                    master_id=m_id,
+                    day_of_week=dow,
+                    start_time="09:00",
+                    end_time="19:00",
+                    slot_step_minutes=30,
+                    is_working_day=is_work
+                )
+                db.add(sch)
+                schedules.append(sch)
+            await db.commit()
+            for sch in schedules:
+                await db.refresh(sch)
+
+        exc_stmt = select(ScheduleException).where(
+            ScheduleException.master_id == m_id,
+            ScheduleException.deleted.is_(False)
+        ).order_by(ScheduleException.date.asc())
+        exceptions = (await db.execute(exc_stmt)).scalars().all()
+
+        return ApiResponse.ok({
+            "master_id": m_id,
+            "schedules": [ScheduleDto.model_validate(s).model_dump() for s in schedules],
+            "exceptions": [ScheduleExceptionDto.model_validate(e).model_dump() for e in exceptions]
+        })
+
+    # 18. Action: schedule_update
+    if action == "schedule_update":
+        m_id = body.get("master_id") or current_master.id
+        days_data = body.get("days", [])
+        for item in days_data:
+            dow = item.get("day_of_week")
+            if dow is None:
+                continue
+            sch_stmt = select(Schedule).where(Schedule.master_id == m_id, Schedule.day_of_week == dow, Schedule.deleted.is_(False))
+            sch = (await db.execute(sch_stmt)).scalar_one_or_none()
+            if not sch:
+                sch = Schedule(
+                    master_id=m_id,
+                    day_of_week=dow,
+                    start_time=item.get("start_time", "09:00"),
+                    end_time=item.get("end_time", "19:00"),
+                    slot_step_minutes=item.get("slot_step_minutes", 30),
+                    is_working_day=bool(item.get("is_working_day", True))
+                )
+                db.add(sch)
+            else:
+                sch.start_time = item.get("start_time", sch.start_time)
+                sch.end_time = item.get("end_time", sch.end_time)
+                sch.slot_step_minutes = item.get("slot_step_minutes", sch.slot_step_minutes)
+                sch.is_working_day = bool(item.get("is_working_day", sch.is_working_day))
+                sch.mark_updated()
+        await db.commit()
+        return ApiResponse.ok({"message": "Графік роботи успішно оновлено"})
+
+    # 19. Action: schedule_exception_add
+    if action == "schedule_exception_add":
+        m_id = body.get("master_id") or current_master.id
+        date_str = body.get("date")
+        if not date_str:
+            return ApiResponse.fail("BAD_REQUEST", "date є обов'язковим")
+        exc_stmt = select(ScheduleException).where(ScheduleException.master_id == m_id, ScheduleException.date == date_str, ScheduleException.deleted.is_(False))
+        exc = (await db.execute(exc_stmt)).scalar_one_or_none()
+        if not exc:
+            exc = ScheduleException(
+                master_id=m_id,
+                date=date_str,
+                start_time=body.get("start_time"),
+                end_time=body.get("end_time"),
+                is_day_off=bool(body.get("is_day_off", True)),
+                reason=body.get("reason", "Вихідний")
+            )
+            db.add(exc)
+        else:
+            exc.start_time = body.get("start_time")
+            exc.end_time = body.get("end_time")
+            exc.is_day_off = bool(body.get("is_day_off", True))
+            exc.reason = body.get("reason", exc.reason)
+            exc.mark_updated()
+        await db.commit()
+        await db.refresh(exc)
+        return ApiResponse.ok(ScheduleExceptionDto.model_validate(exc).model_dump())
+
+    # 20. Action: reminder_template_update
+    if action == "reminder_template_update":
+        t_type = body.get("type")
+        text = body.get("template_text")
+        if not t_type or not text:
+            return ApiResponse.fail("BAD_REQUEST", "type та template_text обов'язкові")
+        tmpl_stmt = select(ReminderTemplate).where(ReminderTemplate.type == t_type, ReminderTemplate.deleted.is_(False))
+        tmpl = (await db.execute(tmpl_stmt)).scalar_one_or_none()
+        if not tmpl:
+            tmpl = ReminderTemplate(
+                type=t_type,
+                template_text=text,
+                is_active=bool(body.get("is_active", True))
+            )
+            db.add(tmpl)
+        else:
+            tmpl.template_text = text
+            if "is_active" in body:
+                tmpl.is_active = bool(body["is_active"])
+            tmpl.mark_updated()
+        await db.commit()
+        await db.refresh(tmpl)
+        return ApiResponse.ok(ReminderTemplateDto.model_validate(tmpl).model_dump())
+
+    # 21. Action: clean_demo_data
+    if action == "clean_demo_data":
+        if current_master.role != "owner":
+            return ApiResponse.fail("FORBIDDEN", "Лише власник може очищати демо-дані")
+        apts = (await db.execute(select(Appointment).where(Appointment.deleted.is_(False)))).scalars().all()
+        for a in apts:
+            a.soft_delete()
+        incs = (await db.execute(select(Income).where(Income.deleted.is_(False)))).scalars().all()
+        for i in incs:
+            i.soft_delete()
+        exps = (await db.execute(select(Expense).where(Expense.deleted.is_(False)))).scalars().all()
+        for e in exps:
+            e.soft_delete()
+        photos = (await db.execute(select(Photo).where(Photo.deleted.is_(False)))).scalars().all()
+        for p in photos:
+            p.soft_delete()
+        vbs = (await db.execute(select(VisitBrief).where(VisitBrief.deleted.is_(False)))).scalars().all()
+        for v in vbs:
+            v.soft_delete()
+        await db.commit()
+        return ApiResponse.ok({"message": "Демо-дані успішно очищено. Налаштування студії та майстри збережені."})
 
     return ApiResponse.fail("UNKNOWN_ACTION", f"Невідомий екшен: {action}")

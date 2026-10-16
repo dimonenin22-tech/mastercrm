@@ -7,12 +7,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -309,6 +311,63 @@ fun AnalyticsTab(
                 ) {
                     Text("Середній чек:", fontWeight = FontWeight.SemiBold)
                     Text("${avgCheck.toInt()} грн", fontWeight = FontWeight.Bold, color = RosePrimary)
+                }
+            }
+        }
+
+        item {
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            var isExporting by remember { mutableStateOf(false) }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            isExporting = true
+                            val today = LocalDate.now()
+                            val fromDate = today.withDayOfMonth(1).format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            val toDate = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            val api = MasterCrmApp.instance.apiClient.getApiService()
+                            val resp = api.exportFinanceCsv(mapOf("from_date" to fromDate, "to_date" to toDate))
+                            if (resp.success && resp.data != null) {
+                                val csvText = resp.data.csv
+                                val file = java.io.File(context.cacheDir, "finance_report_${fromDate}_${toDate}.csv")
+                                file.writeText(csvText)
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/csv"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Звіт доходів та витрат для ФОП ($fromDate - $toDate)")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                val chooser = android.content.Intent.createChooser(sendIntent, "Поділитися CSV звітом для ФОП")
+                                context.startActivity(chooser)
+                            }
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Помилка експорту: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isExporting = false
+                        }
+                    }
+                },
+                enabled = !isExporting,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                if (isExporting) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Експорт у CSV (для ФОП)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         }

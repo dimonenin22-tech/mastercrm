@@ -114,15 +114,18 @@ fun ClientsScreen() {
                             isVip = isVip,
                             onResetRemoval = {
                                 scope.launch {
-                                    // Optimistic Room update
                                     val updated = client.copy(visitsSinceLastRemoval = 0)
                                     app.database.clientDao().insertOrUpdate(updated)
-
-                                    // Queue mutation
                                     app.syncRepository.queueMutation(
                                         action = "client_reset_removal_counter",
                                         payload = mapOf("client_id" to client.id)
                                     )
+                                }
+                            },
+                            onToggleBlacklist = {
+                                scope.launch {
+                                    val updated = client.copy(isBlacklisted = !client.isBlacklisted)
+                                    app.database.clientDao().insertOrUpdate(updated)
                                 }
                             },
                             onWhatsAppClick = {
@@ -155,6 +158,7 @@ fun ClientCard(
     client: ClientEntity,
     isVip: Boolean,
     onResetRemoval: () -> Unit,
+    onToggleBlacklist: () -> Unit,
     onWhatsAppClick: () -> Unit
 ) {
     Card(
@@ -169,14 +173,14 @@ fun ClientCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Text(
                         text = "${client.firstName} ${client.lastName ?: ""}".trim(),
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp
                     )
                     if (isVip) {
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
                                 .background(Color(0xFFFFD700), RoundedCornerShape(6.dp))
@@ -190,14 +194,59 @@ fun ClientCard(
                             )
                         }
                     }
+                    if (client.discountPercent > 0) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "-${client.discountPercent}%",
+                                color = RosePrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
                 }
 
-                Text(
-                    text = "LTV: ${client.totalSpent.toInt()} грн",
-                    fontWeight = FontWeight.SemiBold,
-                    color = RosePrimary,
-                    fontSize = 13.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "LTV: ${client.totalSpent.toInt()} грн",
+                        fontWeight = FontWeight.SemiBold,
+                        color = RosePrimary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = onToggleBlacklist,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (client.isBlacklisted) Icons.Default.Block else Icons.Default.CheckCircle,
+                            contentDescription = "Чорний список",
+                            tint = if (client.isBlacklisted) Color(0xFFD32F2F) else Color.LightGray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            if (client.isBlacklisted) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFFD32F2F).copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "⚠️ Чорний список (No-Show: ${client.noShowCount})",
+                        color = Color(0xFFD32F2F),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))

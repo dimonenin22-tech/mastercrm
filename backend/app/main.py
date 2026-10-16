@@ -1,10 +1,13 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from decimal import Decimal
 import logging
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
@@ -36,6 +39,16 @@ async def init_and_seed_db() -> None:
     logger.info("Initializing database schema...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from sqlalchemy import text
+        for col_sql in [
+            "ALTER TABLE clients ADD COLUMN no_show_count INTEGER DEFAULT 0",
+            "ALTER TABLE clients ADD COLUMN is_blacklisted BOOLEAN DEFAULT 0",
+            "ALTER TABLE clients ADD COLUMN discount_percent INTEGER DEFAULT 0",
+        ]:
+            try:
+                await conn.execute(text(col_sql))
+            except Exception:
+                pass
 
     async with AsyncSessionLocal() as db:
         # 1. Seed StudioSettings
@@ -217,11 +230,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
 app.include_router(api_router)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
-async def root():
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and request.method == "GET":
+        from app.api.legacy_router import render_public_landing_page
+        return HTMLResponse(content=await render_public_landing_page())
+
     return {
         "app": settings.PROJECT_NAME,
         "version": "2.0.0",

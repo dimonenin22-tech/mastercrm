@@ -19,7 +19,7 @@ import com.mastercrm.data.local.entity.*
         ReviewEntity::class,
         OutboxMutationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

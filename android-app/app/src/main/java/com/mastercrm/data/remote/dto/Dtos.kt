@@ -52,6 +52,9 @@ data class ClientDto(
     @SerializedName("total_spent") val totalSpent: Double,
     @SerializedName("visits_since_last_removal") val visitsSinceLastRemoval: Int,
     @SerializedName("last_removal_date") val lastRemovalDate: String?,
+    @SerializedName("no_show_count") val noShowCount: Int = 0,
+    @SerializedName("is_blacklisted") val isBlacklisted: Boolean = false,
+    @SerializedName("discount_percent") val discountPercent: Int = 0,
     @SerializedName("deleted") val deleted: Boolean,
     @SerializedName("version") val version: Int,
     @SerializedName("updated_at") val updatedAt: String
@@ -150,6 +153,7 @@ data class SyncResponseDto(
     @SerializedName("products") val products: List<ProductDto>?,
     @SerializedName("reviews") val reviews: List<ReviewDto>?,
     @SerializedName("settings") val settings: Map<String, String>?,
+    @SerializedName("schedules") val schedules: List<ScheduleDto>?,
     @SerializedName("server_sync_time") val serverSyncTime: String
 )
 
@@ -165,4 +169,52 @@ data class FinanceReportDto(
     @SerializedName("appointments_completed") val appointmentsCompleted: Int,
     @SerializedName("average_check") val averageCheck: Double,
     @SerializedName("margin_percent") val marginPercent: Double
+)
+
+data class ScheduleDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("master_id") val masterId: String,
+    @SerializedName("day_of_week") val dayOfWeek: Int,
+    @SerializedName("start_time") val startTime: String,
+    @SerializedName("end_time") val endTime: String,
+    @SerializedName("slot_step_minutes") val slotStepMinutes: Int = 30,
+    @SerializedName("is_working_day") val isWorkingDay: Boolean = true
+)
+
+data class ScheduleExceptionDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("master_id") val masterId: String,
+    @SerializedName("date") val date: String,
+    @SerializedName("start_time") val startTime: String? = null,
+    @SerializedName("end_time") val endTime: String? = null,
+    @SerializedName("is_day_off") val isDayOff: Boolean = true,
+    @SerializedName("reason") val reason: String? = ""
+)
+
+data class ScheduleResponseDto(
+    @SerializedName("master_id") val masterId: String,
+    @SerializedName("schedules") val schedules: List<ScheduleDto>,
+    @SerializedName("exceptions") val exceptions: List<ScheduleExceptionDto>
+)
+
+data class PhotoDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("appointment_id") val appointmentId: String?,
+    @SerializedName("client_id") val clientId: String?,
+    @SerializedName("photo_type") val photoType: String,
+    @SerializedName("file_url") val fileUrl: String,
+    @SerializedName("thumbnail_url") val thumbnailUrl: String?
+)
+
+data class ReminderTemplateDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("type") val type: String,
+    @SerializedName("template_text") val templateText: String,
+    @SerializedName("is_active") val isActive: Boolean
+)
+
+data class FinanceExportCsvResponseDto(
+    @SerializedName("csv") val csv: String,
+    @SerializedName("from_date") val fromDate: String,
+    @SerializedName("to_date") val toDate: String
 )

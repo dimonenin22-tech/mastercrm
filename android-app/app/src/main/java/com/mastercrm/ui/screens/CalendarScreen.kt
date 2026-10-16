@@ -239,6 +239,7 @@ fun CalendarScreen() {
     selectedAppointmentForBrief?.let { apt ->
         VisitBriefDialog(
             appointmentId = apt.id,
+            clientId = apt.clientId,
             onDismiss = { selectedAppointmentForBrief = null },
             onSave = { notes, condition, coffee ->
                 scope.launch {
@@ -415,15 +416,21 @@ fun CreateAppointmentDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisitBriefDialog(
     appointmentId: String,
+    clientId: String,
     onDismiss: () -> Unit,
     onSave: (notes: String, condition: String, coffee: String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var materialNotes by remember { mutableStateOf("") }
     var nailCondition by remember { mutableStateOf("") }
     var coffeePrefs by remember { mutableStateOf("") }
+    var attachedPhotoType by remember { mutableStateOf("AFTER") }
+    var photoUploadStatus by remember { mutableStateOf<String?>(null) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -449,6 +456,62 @@ fun VisitBriefDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Фото процедури:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = attachedPhotoType == "BEFORE",
+                        onClick = { attachedPhotoType = "BEFORE" },
+                        label = { Text("Фото До") }
+                    )
+                    FilterChip(
+                        selected = attachedPhotoType == "AFTER",
+                        onClick = { attachedPhotoType = "AFTER" },
+                        label = { Text("Фото Після") }
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                isUploadingPhoto = true
+                                val api = MasterCrmApp.instance.apiClient.getApiService()
+                                val resp = api.uploadPhoto(
+                                    mapOf(
+                                        "client_id" to clientId,
+                                        "appointment_id" to appointmentId,
+                                        "photo_type" to attachedPhotoType,
+                                        "filename" to "photo_${attachedPhotoType.lowercase()}_${appointmentId.take(8)}.jpg"
+                                    )
+                                )
+                                if (resp.success) {
+                                    photoUploadStatus = "Фото $attachedPhotoType збережено!"
+                                }
+                            } catch (e: Exception) {
+                                photoUploadStatus = "Помилка додавання фото"
+                            } finally {
+                                isUploadingPhoto = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isUploadingPhoto
+                ) {
+                    Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (isUploadingPhoto) "Завантаження..." else "Прикріпити фото $attachedPhotoType")
+                }
+
+                photoUploadStatus?.let { status ->
+                    Text(status, color = RosePrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         },
         confirmButton = {

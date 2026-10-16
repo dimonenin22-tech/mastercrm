@@ -6,7 +6,7 @@ from typing import Optional
 import pytz
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from sqlalchemy import select, or_
@@ -70,8 +70,33 @@ def calculate_end_time(start_str: str, duration_minutes: int) -> str:
 
 # 1. /start and Main Menu
 @client_router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, command: Optional[CommandObject] = None) -> None:
     await state.clear()
+
+    # Deep-link support: /start srv_<service_id>
+    if command and command.args and command.args.startswith("srv_"):
+        srv_id = command.args.replace("srv_", "").strip()
+        async with AsyncSessionLocal() as db:
+            srv = await db.get(Service, srv_id)
+            if srv and not srv.deleted and srv.is_active:
+                await state.update_data(
+                    service_id=srv.id,
+                    service_title=srv.title,
+                    service_price=float(srv.price),
+                    service_duration=srv.duration_minutes
+                )
+                await state.set_state(BookingStates.choosing_date)
+                today_str = get_kyiv_today()
+                parts = today_str.split("-")
+                cal_kb = create_inline_calendar(int(parts[0]), int(parts[1]), today_str)
+                await message.answer(
+                    f"💅 <b>Обрано послугу: {html.escape(srv.title)}</b> ({int(srv.price)} грн)\n\n"
+                    f"Оберіть бажану дату запису в календарі нижче:",
+                    reply_markup=cal_kb,
+                    parse_mode="HTML"
+                )
+                return
+
     first_name = html.escape(message.from_user.first_name if message.from_user else "Клієнт")
     text = (
         f"Привіт, <b>{first_name}</b>! ✨\n\n"
@@ -499,8 +524,20 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         set_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
         st_map = {s.key: s.value for s in set_res.scalars().all()}
 
+        # Apply loyalty discount if set
+        discount_p = client.discount_percent or 0
+        if discount_p > 0:
+            srv_price = Decimal(str(round(float(srv_price) * (100 - discount_p) / 100.0, 2)))
+
         deposit_required = st_map.get("deposit_required", "false").lower() == "true"
         deposit_val = Decimal(st_map.get("deposit_amount", "200.00")) if deposit_required else Decimal("0.00")
+
+        # Blacklisted clients force mandatory deposit
+        if client.is_blacklisted:
+            deposit_required = True
+            if deposit_val <= Decimal("0.00"):
+                deposit_val = Decimal(st_map.get("deposit_amount", "200.00"))
+
         card_details = st_map.get("card_details", "5375 4141 1234 5678 (Анастасія)")
         jar_link = st_map.get("jar_link", "https://send.monobank.ua/jar/123456")
 
@@ -532,6 +569,8 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
                 f"💅 Послуга: <b>{html.escape(srv_title)}</b> ({int(srv_price)} грн)\n"
                 f"💰 Завдаток: <b>{int(deposit_val)} грн</b>"
             )
+            if client.is_blacklisted:
+                m_notice += "\n⚠️ <i>Клієнт у чорному списку (No-Show).</i>"
             try:
                 await bot.send_message(chat_id=master.telegram_chat_id, text=m_notice, parse_mode="HTML")
             except Exception as ex:
@@ -544,8 +583,13 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         f"📅 Дата: <b>{date_str}</b>\n"
         f"⏰ Час: <b>{start_time}</b>\n"
         f"💅 Процедура: <b>{html.escape(srv_title)}</b>\n"
-        f"💰 Загальна вартість: <b>{int(srv_price)} грн</b>\n\n"
+        f"💰 Загальна вартість: <b>{int(srv_price)} грн</b>\n"
     )
+    if discount_p > 0:
+        confirmation_msg += f"🎁 <i>Враховано вашу персональну знижку {discount_p}%!</i>\n"
+    if client.is_blacklisted:
+        confirmation_msg += f"⚠️ <i>Для вашого акаунту діє обов'язковий завдаток (No-Show).</i>\n"
+    confirmation_msg += "\n"
 
     if deposit_required and deposit_val > Decimal("0.00"):
         confirmation_msg += (

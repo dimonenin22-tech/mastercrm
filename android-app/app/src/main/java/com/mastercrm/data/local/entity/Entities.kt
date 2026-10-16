@@ -28,6 +28,9 @@ data class ClientEntity(
     val totalSpent: Double,
     val visitsSinceLastRemoval: Int,
     val lastRemovalDate: String?,
+    val noShowCount: Int = 0,
+    val isBlacklisted: Boolean = false,
+    val discountPercent: Int = 0,
     val deleted: Boolean,
     val version: Int,
     val updatedAt: String

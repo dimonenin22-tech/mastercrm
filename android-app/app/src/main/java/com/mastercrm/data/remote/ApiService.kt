@@ -47,4 +47,37 @@ interface ApiService {
     suspend fun resetRemovalCounter(
         @Body body: Map<String, String>
     ): ApiResponse<Map<String, Any>>
+
+    @POST("exec?action=finance_export_csv")
+    suspend fun exportFinanceCsv(
+        @Body body: Map<String, String>
+    ): ApiResponse<FinanceExportCsvResponseDto>
+
+    @POST("exec?action=schedule_get")
+    suspend fun getSchedule(
+        @Body body: Map<String, String> = emptyMap()
+    ): ApiResponse<ScheduleResponseDto>
+
+    @POST("exec?action=schedule_update")
+    suspend fun updateSchedule(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<Map<String, Any>>
+
+    @POST("exec?action=schedule_exception_add")
+    suspend fun addScheduleException(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<ScheduleExceptionDto>
+
+    @POST("exec?action=reminder_template_update")
+    suspend fun updateReminderTemplate(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<ReminderTemplateDto>
+
+    @POST("exec?action=clean_demo_data")
+    suspend fun cleanDemoData(): ApiResponse<Map<String, Any>>
+
+    @POST("exec?action=photo_upload")
+    suspend fun uploadPhoto(
+        @Body body: Map<String, Any?>
+    ): ApiResponse<PhotoDto>
 }

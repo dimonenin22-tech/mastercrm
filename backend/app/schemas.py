@@ -56,6 +56,9 @@ class ClientDto(BaseModel):
     last_visit_at: Optional[datetime] = None
     visits_since_last_removal: int
     last_removal_date: Optional[datetime] = None
+    no_show_count: int = 0
+    is_blacklisted: bool = False
+    discount_percent: int = 0
     created_at: datetime
     updated_at: datetime
     deleted: bool
@@ -163,6 +166,50 @@ class ReviewDto(BaseModel):
     version: int
 
 
+class ScheduleDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    master_id: str
+    day_of_week: int
+    start_time: str
+    end_time: str
+    slot_step_minutes: int
+    is_working_day: bool
+
+
+class ScheduleExceptionDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    master_id: str
+    date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    is_day_off: bool
+    reason: Optional[str] = ""
+
+
+class PhotoDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    appointment_id: Optional[str] = None
+    client_id: Optional[str] = None
+    photo_type: str
+    file_url: str
+    thumbnail_url: Optional[str] = ""
+
+
+class ReminderTemplateDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    type: str
+    template_text: str
+    is_active: bool
+
+
 class SyncResponseData(BaseModel):
     appointments: list[AppointmentDto] = Field(default_factory=list)
     clients: list[ClientDto] = Field(default_factory=list)
@@ -172,5 +219,7 @@ class SyncResponseData(BaseModel):
     expenses: list[ExpenseDto] = Field(default_factory=list)
     products: list[ProductDto] = Field(default_factory=list)
     reviews: list[ReviewDto] = Field(default_factory=list)
+    schedules: list[ScheduleDto] = Field(default_factory=list)
     settings: dict[str, str] = Field(default_factory=dict)
     server_sync_time: str
+
