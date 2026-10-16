@@ -3,7 +3,9 @@ package com.mastercrm.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
-import android.net.Uri
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,1051 +23,966 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.mastercrm.MasterCrmApp
-import com.mastercrm.data.local.entity.ClientEntity
-import com.mastercrm.data.local.entity.ReviewEntity
-import com.mastercrm.data.local.entity.ServiceEntity
-import com.mastercrm.ui.theme.RosePrimary
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-enum class StoryStyle(
-    val title: String,
+// =====================================================================
+// 1. МОДЕЛІ ДАНИХ ДЛЯ КОНСТРУКТОРА СТОРІС
+// =====================================================================
+enum class StoryMode(val title: String) {
+    FREE_SLOTS("Вільні віконця"),
+    PRICE_LIST("Прайс-лист"),
+    CLIENT_REVIEW("Відгук (TG Чат)")
+}
+
+enum class CanvaStyle(
+    val label: String,
     val bgStart: Int,
     val bgEnd: Int,
     val cardBg: Int,
-    val cardBorder: Int,
-    val primaryText: Int,
-    val accentText: Int,
-    val subText: Int,
-    val isDark: Boolean
+    val accent: Int,
+    val textPrimary: Int,
+    val textSecondary: Int
 ) {
     GLAMOUR_DARK(
-        title = "Dark Luxury",
-        bgStart = 0xFF0B0F19.toInt(),
-        bgEnd = 0xFF1E1B4B.toInt(),
-        cardBg = 0xDD1F2937.toInt(),
-        cardBorder = 0xFFF472B6.toInt(),
-        primaryText = 0xFFFFFFFF.toInt(),
-        accentText = 0xFFF472B6.toInt(),
-        subText = 0xFF9CA3AF.toInt(),
-        isDark = true
+        label = "Dark Luxury",
+        bgStart = Color.parseColor("#0B0F19"),
+        bgEnd = Color.parseColor("#2E1065"),
+        cardBg = Color.parseColor("#26FFFFFF"),
+        accent = Color.parseColor("#F472B6"),
+        textPrimary = Color.parseColor("#FFFFFF"),
+        textSecondary = Color.parseColor("#CBD5E1")
     ),
     NUDE_MINIMAL(
-        title = "Nude Aesthetic",
-        bgStart = 0xFFFAF5F0.toInt(),
-        bgEnd = 0xFFEFE6DD.toInt(),
-        cardBg = 0xF5FFFFFF.toInt(),
-        cardBorder = 0xFFD7CCC8.toInt(),
-        primaryText = 0xFF3E2723.toInt(),
-        accentText = 0xFF8D6E63.toInt(),
-        subText = 0xFF795548.toInt(),
-        isDark = false
+        label = "Nude Aesthetic",
+        bgStart = Color.parseColor("#FAF6F0"),
+        bgEnd = Color.parseColor("#E6D7C3"),
+        cardBg = Color.parseColor("#CCFFFFFF"),
+        accent = Color.parseColor("#8D6E63"),
+        textPrimary = Color.parseColor("#2D1E18"),
+        textSecondary = Color.parseColor("#6D4C41")
     ),
     ROSE_GLASS(
-        title = "Soft Pink Glass",
-        bgStart = 0xFFFCE7F3.toInt(),
-        bgEnd = 0xFFFBCFE8.toInt(),
-        cardBg = 0xE6FFFFFF.toInt(),
-        cardBorder = 0xFFEC4899.toInt(),
-        primaryText = 0xFF831843.toInt(),
-        accentText = 0xFFBE185D.toInt(),
-        subText = 0xFF9D174D.toInt(),
-        isDark = false
+        label = "Soft Pink",
+        bgStart = Color.parseColor("#FFF1F2"),
+        bgEnd = Color.parseColor("#FBCFE8"),
+        cardBg = Color.parseColor("#D9FFFFFF"),
+        accent = Color.parseColor("#DB2777"),
+        textPrimary = Color.parseColor("#831843"),
+        textSecondary = Color.parseColor("#9D174D")
     ),
     NEON_CYBER(
-        title = "Bold Pop",
-        bgStart = 0xFF09090B.toInt(),
-        bgEnd = 0xFF18181B.toInt(),
-        cardBg = 0xF218181B.toInt(),
-        cardBorder = 0xFFEC4899.toInt(),
-        primaryText = 0xFFFFFFFF.toInt(),
-        accentText = 0xFFEC4899.toInt(),
-        subText = 0xFF06B6D4.toInt(),
-        isDark = true
+        label = "Neon Pop",
+        bgStart = Color.parseColor("#09090B"),
+        bgEnd = Color.parseColor("#18181B"),
+        cardBg = Color.parseColor("#1F2937"),
+        accent = Color.parseColor("#06B6D4"),
+        textPrimary = Color.parseColor("#F8FAFC"),
+        textSecondary = Color.parseColor("#F43F5E")
     ),
     CLEAN_EDITORIAL(
-        title = "Vogue Monochrome",
-        bgStart = 0xFFF8FAFC.toInt(),
-        bgEnd = 0xFFF1F5F9.toInt(),
-        cardBg = 0xFFFFFFFF.toInt(),
-        cardBorder = 0xFF0F172A.toInt(),
-        primaryText = 0xFF0F172A.toInt(),
-        accentText = 0xFF0F172A.toInt(),
-        subText = 0xFF64748B.toInt(),
-        isDark = false
+        label = "Vogue Clean",
+        bgStart = Color.parseColor("#FFFFFF"),
+        bgEnd = Color.parseColor("#F1F5F9"),
+        cardBg = Color.parseColor("#F8FAFC"),
+        accent = Color.parseColor("#0F172A"),
+        textPrimary = Color.parseColor("#0F172A"),
+        textSecondary = Color.parseColor("#475569")
     )
 }
 
-data class ReviewStoryData(
-    val clientName: String,
-    val rating: Int,
-    val reviewText: String,
-    val masterReply: String,
-    val serviceTitle: String,
-    val timestamp: String = "18:45"
+data class ServiceStoryItem(
+    val id: String,
+    val title: String,
+    val price: Int,
+    val durationMinutes: Int,
+    val includedInStory: Boolean = true
 )
 
-fun renderCanvaStoryBitmap(
-    mode: Int, // 0 = Slots, 1 = Prices, 2 = Review
-    style: StoryStyle,
-    headerTitle: String,
-    headerSubtitle: String,
-    footerText: String,
-    slotsDateString: String,
-    activeTimeSlots: List<String>,
-    activeServices: List<Pair<String, String>>, // Title, Price (and optional duration)
-    reviewData: ReviewStoryData
-): Bitmap {
-    val width = 1080
-    val height = 1920
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
+data class ClientStoryOption(
+    val id: String,
+    val name: String,
+    val lastServiceTitle: String = "Комплекс Манікюр",
+    val savedReviews: List<SavedReviewOption> = emptyList()
+)
 
-    // 1. Background Gradient
-    val gradient = LinearGradient(
-        0f, 0f, 0f, height.toFloat(),
-        intArrayOf(style.bgStart, style.bgEnd),
-        floatArrayOf(0f, 1f),
-        Shader.TileMode.CLAMP
-    )
-    val bgPaint = Paint().apply { shader = gradient }
-    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+data class SavedReviewOption(
+    val id: String,
+    val rating: Int,
+    val comment: String,
+    val serviceTitle: String
+)
 
-    // 2. Luxury Outer Frame
-    val framePaint = Paint().apply {
-        color = style.cardBorder
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
-        isAntiAlias = true
+// =====================================================================
+// 2. ЯДРО РЕНДЕРИНГУ CANVA BITMAP (1080x1920) ДЛЯ LIVE PREVIEW ТА ЕКСПОРТУ
+// =====================================================================
+object CanvaStoryRenderer {
+
+    fun renderStoryBitmap(
+        mode: StoryMode,
+        style: CanvaStyle,
+        studioName: String,
+        headerText: String,
+        footerText: String,
+        // Для вільних віконець
+        dateLabel: String,
+        selectedSlots: List<String>,
+        // Для прайс-листа
+        services: List<ServiceStoryItem>,
+        showDurationOnPrice: Boolean,
+        // Для відгуку клієнта
+        reviewClientName: String,
+        reviewServiceTitle: String,
+        reviewStars: Int,
+        reviewComment: String,
+        reviewMasterReply: String
+    ): Bitmap {
+        val w = 1080
+        val h = 1920
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+
+        // 1. Фон у вибраному стилі Canva
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, w.toFloat(), h.toFloat(),
+                style.bgStart, style.bgEnd, Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), bgPaint)
+
+        // Декоративні м'які кола на фоні
+        val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            alpha = 28
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(w * 0.85f, h * 0.12f, 340f, glowPaint)
+        canvas.drawCircle(w * 0.15f, h * 0.85f, 420f, glowPaint)
+
+        // 2. Верхній бейдж студії
+        val studioPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            textSize = 40f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.12f
+        }
+        canvas.drawText(studioName.uppercase(), w / 2f, 210f, studioPaint)
+
+        // 3. Головний заголовок
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.textPrimary
+            textSize = 72f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText(headerText, w / 2f, 310f, titlePaint)
+
+        when (mode) {
+            StoryMode.FREE_SLOTS -> drawFreeSlotsContent(canvas, w, style, dateLabel, selectedSlots)
+            StoryMode.PRICE_LIST -> drawPriceListContent(canvas, w, style, services.filter { it.includedInStory }, showDurationOnPrice)
+            StoryMode.CLIENT_REVIEW -> drawTelegramReviewContent(
+                canvas, w, style, reviewClientName, reviewServiceTitle, reviewStars, reviewComment, reviewMasterReply
+            )
+        }
+
+        // 4. Нижній підпис (CTA)
+        val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.textSecondary
+            textSize = 38f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText(footerText, w / 2f, h - 150f, footerPaint)
+
+        return bmp
     }
-    canvas.drawRoundRect(40f, 40f, (width - 40).toFloat(), (height - 40).toFloat(), 32f, 32f, framePaint)
 
-    // 3. Header
-    val titlePaint = Paint().apply {
-        color = style.accentText
-        textSize = 58f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        textAlign = Paint.Align.CENTER
-        isAntiAlias = true
+    private fun drawFreeSlotsContent(
+        canvas: Canvas,
+        w: Int,
+        style: CanvaStyle,
+        dateLabel: String,
+        slots: List<String>
+    ) {
+        val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            textSize = 48f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText(dateLabel, w / 2f, 395f, subPaint)
+
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.cardBg
+            style = Paint.Style.FILL
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        val slotTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.textPrimary
+            textSize = 56f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        if (slots.isEmpty()) {
+            canvas.drawText("Вільних віконець немає", w / 2f, 800f, subPaint)
+            return
+        }
+
+        val cols = 2
+        val cardW = 410f
+        val cardH = 135f
+        val gapX = 50f
+        val gapY = 42f
+        val startX = (w - (cols * cardW + gapX)) / 2f
+        val startY = 490f
+
+        slots.take(12).forEachIndexed { idx, timeStr ->
+            val col = idx % cols
+            val row = idx / cols
+            val left = startX + col * (cardW + gapX)
+            val top = startY + row * (cardH + gapY)
+            val rect = RectF(left, top, left + cardW, top + cardH)
+            canvas.drawRoundRect(rect, 36f, 36f, cardPaint)
+            canvas.drawRoundRect(rect, 36f, 36f, strokePaint)
+            canvas.drawText(timeStr, rect.centerX(), rect.centerY() + 20f, slotTextPaint)
+        }
     }
-    canvas.drawText(headerTitle, (width / 2).toFloat(), 180f, titlePaint)
 
-    val subtitlePaint = Paint().apply {
-        color = style.subText
-        textSize = 30f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        textAlign = Paint.Align.CENTER
-        isAntiAlias = true
+    private fun drawPriceListContent(
+        canvas: Canvas,
+        w: Int,
+        style: CanvaStyle,
+        services: List<ServiceStoryItem>,
+        showDuration: Boolean
+    ) {
+        val containerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.cardBg
+            style = Paint.Style.FILL
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            alpha = 90
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.textPrimary
+            textSize = 42f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val durPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.textSecondary
+            textSize = 32f
+        }
+        val pricePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            textSize = 46f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        var currentY = 420f
+        val rowH = if (showDuration) 145f else 118f
+        val marginH = 85f
+
+        services.take(8).forEach { srv ->
+            val rect = RectF(marginH, currentY, w - marginH, currentY + rowH)
+            canvas.drawRoundRect(rect, 28f, 28f, containerPaint)
+            canvas.drawRoundRect(rect, 28f, 28f, strokePaint)
+
+            val titleShort = if (srv.title.length > 26) srv.title.take(26) + "…" else srv.title
+            if (showDuration) {
+                canvas.drawText(titleShort, marginH + 40f, currentY + 62f, namePaint)
+                canvas.drawText("⏱ ${srv.durationMinutes} хв", marginH + 40f, currentY + 110f, durPaint)
+            } else {
+                canvas.drawText(titleShort, marginH + 40f, currentY + 74f, namePaint)
+            }
+
+            canvas.drawText("${srv.price} ₴", w - marginH - 40f, currentY + (rowH / 2f) + 16f, pricePaint)
+            currentY += rowH + 26f
+        }
     }
-    canvas.drawText(headerSubtitle, (width / 2).toFloat(), 235f, subtitlePaint)
 
-    val dividerPaint = Paint().apply {
-        color = style.cardBorder
-        strokeWidth = 3f
-        isAntiAlias = true
-    }
-    canvas.drawLine(240f, 280f, (width - 240).toFloat(), 280f, dividerPaint)
+    private fun drawTelegramReviewContent(
+        canvas: Canvas,
+        w: Int,
+        style: CanvaStyle,
+        clientName: String,
+        serviceTitle: String,
+        stars: Int,
+        comment: String,
+        masterReply: String
+    ) {
+        val margin = 80f
+        val chatTop = 440f
+        val chatRect = RectF(margin, chatTop, w - margin, 1460f)
 
-    // 4. Content Area by Mode
-    when (mode) {
-        0 -> { // Free Slots
-            // Date Card
-            val cardPaint = Paint().apply {
-                color = style.cardBg
+        // Зовнішня рамка вікна Telegram
+        val chatBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#17212B")
+            style = Paint.Style.FILL
+        }
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = style.accent
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        canvas.drawRoundRect(chatRect, 44f, 44f, chatBgPaint)
+        canvas.drawRoundRect(chatRect, 44f, 44f, borderPaint)
+
+        // Шапка чату з аватаркою клієнта
+        val avatarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.accent }
+        canvas.drawCircle(margin + 95f, chatTop + 95f, 52f, avatarPaint)
+
+        val initPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 44f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val initial = clientName.trim().firstOrNull()?.uppercase() ?: "К"
+        canvas.drawText(initial, margin + 95f, chatTop + 110f, initPaint)
+
+        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 42f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val srvPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#64B5F6")
+            textSize = 32f
+        }
+        canvas.drawText(clientName.ifBlank { "Клієнт студії" }, margin + 175f, chatTop + 85f, namePaint)
+        canvas.drawText("💅 Послуга: $serviceTitle", margin + 175f, chatTop + 132f, srvPaint)
+
+        // Розділювач шапки
+        val divPaint = Paint().apply { color = Color.parseColor("#2B3846"); strokeWidth = 2f }
+        canvas.drawLine(margin, chatTop + 175f, w - margin, chatTop + 175f, divPaint)
+
+        // Вхідна бульбашка повідомлення клієнта
+        val bubbleRect = RectF(margin + 45f, chatTop + 220f, w - margin - 90f, chatTop + 720f)
+        val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#182533")
+            style = Paint.Style.FILL
+        }
+        canvas.drawRoundRect(bubbleRect, 32f, 32f, bubblePaint)
+
+        // Зірочки оцінки
+        val starPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FACC15")
+            textSize = 46f
+        }
+        val starsStr = "⭐".repeat(stars.coerceIn(1, 5))
+        canvas.drawText("Оцінка візиту: $starsStr", bubbleRect.left + 40f, bubbleRect.top + 70f, starPaint)
+
+        // Багаторядковий текст відгуку
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+        }
+        val textWidth = (bubbleRect.width() - 80f).toInt()
+        val staticLayout = StaticLayout.Builder
+            .obtain(comment.ifBlank { "Дякую за ідеальний манікюр! Покриття тримається супер 💖" }, 0, comment.ifBlank { "Дякую за ідеальний манікюр! Покриття тримається супер 💖" }.length, textPaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(8f, 1.1f)
+            .setMaxLines(6)
+            .build()
+
+        canvas.save()
+        canvas.translate(bubbleRect.left + 40f, bubbleRect.top + 115f)
+        staticLayout.draw(canvas)
+        canvas.restore()
+
+        val timePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#6C7883")
+            textSize = 28f
+            textAlign = Paint.Align.RIGHT
+        }
+        canvas.drawText("18:42", bubbleRect.right - 30f, bubbleRect.bottom - 24f, timePaint)
+
+        // Вихідна бульбашка-відповідь майстра
+        if (masterReply.isNotBlank()) {
+            val replyRect = RectF(margin + 160f, chatTop + 770f, w - margin - 45f, chatTop + 960f)
+            val replyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#2B5278")
                 style = Paint.Style.FILL
-                isAntiAlias = true
             }
-            val borderPaint = Paint().apply {
-                color = style.cardBorder
-                style = Paint.Style.STROKE
-                strokeWidth = 2.5f
-                isAntiAlias = true
-            }
+            canvas.drawRoundRect(replyRect, 32f, 32f, replyPaint)
 
-            canvas.drawRoundRect(100f, 330f, (width - 100).toFloat(), 430f, 20f, 20f, cardPaint)
-            canvas.drawRoundRect(100f, 330f, (width - 100).toFloat(), 430f, 20f, 20f, borderPaint)
-
-            val dateTextPaint = Paint().apply {
-                color = style.accentText
-                textSize = 38f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                textAlign = Paint.Align.CENTER
-                isAntiAlias = true
-            }
-            canvas.drawText(slotsDateString, (width / 2).toFloat(), 395f, dateTextPaint)
-
-            // Slot Badges Grid (2 columns)
-            var curY = 490f
-            val leftColX = 140f
-            val rightColX = 560f
-            val slotWidth = 380f
-            val slotHeight = 90f
-
-            val slotBgPaint = Paint().apply {
-                color = style.cardBg
-                style = Paint.Style.FILL
-                isAntiAlias = true
-            }
-            val slotBorderPaint = Paint().apply {
-                color = style.cardBorder
-                style = Paint.Style.STROKE
-                strokeWidth = 2f
-                isAntiAlias = true
-            }
-            val slotTextPaint = Paint().apply {
-                color = style.primaryText
+            val replyTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
                 textSize = 36f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                textAlign = Paint.Align.CENTER
-                isAntiAlias = true
             }
+            val replyLayout = StaticLayout.Builder
+                .obtain(masterReply, 0, masterReply.length, replyTextPaint, (replyRect.width() - 70f).toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setMaxLines(3)
+                .build()
 
-            for (i in activeTimeSlots.indices) {
-                if (curY > 1550f) break
-                val isLeft = (i % 2 == 0)
-                val x = if (isLeft) leftColX else rightColX
-                val y = curY
+            canvas.save()
+            canvas.translate(replyRect.left + 35f, replyRect.top + 35f)
+            replyLayout.draw(canvas)
+            canvas.restore()
 
-                canvas.drawRoundRect(x, y, x + slotWidth, y + slotHeight, 16f, 16f, slotBgPaint)
-                canvas.drawRoundRect(x, y, x + slotWidth, y + slotHeight, 16f, 16f, slotBorderPaint)
-                canvas.drawText(activeTimeSlots[i], x + (slotWidth / 2), y + 58f, slotTextPaint)
-
-                if (!isLeft || i == activeTimeSlots.size - 1) {
-                    curY += 120f
-                }
-            }
-
-            if (activeTimeSlots.isEmpty()) {
-                val emptyPaint = Paint().apply {
-                    color = style.subText
-                    textSize = 36f
-                    textAlign = Paint.Align.CENTER
-                    isAntiAlias = true
-                }
-                canvas.drawText("Всі віконця зайняті на цю дату 💅", (width / 2).toFloat(), 700f, emptyPaint)
-            }
-        }
-        1 -> { // Price List
-            var curY = 360f
-            val itemBgPaint = Paint().apply {
-                color = style.cardBg
-                style = Paint.Style.FILL
-                isAntiAlias = true
-            }
-            val itemBorderPaint = Paint().apply {
-                color = style.cardBorder
-                style = Paint.Style.STROKE
-                strokeWidth = 2f
-                isAntiAlias = true
-            }
-            val titleTextPaint = Paint().apply {
-                color = style.primaryText
-                textSize = 34f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                isAntiAlias = true
-            }
-            val priceTextPaint = Paint().apply {
-                color = style.accentText
-                textSize = 36f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                textAlign = Paint.Align.RIGHT
-                isAntiAlias = true
-            }
-
-            for ((srvTitle, srvPrice) in activeServices) {
-                if (curY > 1580f) break
-                canvas.drawRoundRect(90f, curY, (width - 90).toFloat(), curY + 115f, 18f, 18f, itemBgPaint)
-                canvas.drawRoundRect(90f, curY, (width - 90).toFloat(), curY + 115f, 18f, 18f, itemBorderPaint)
-
-                canvas.drawText(srvTitle, 130f, curY + 70f, titleTextPaint)
-                canvas.drawText(srvPrice, (width - 130).toFloat(), curY + 70f, priceTextPaint)
-                curY += 145f
-            }
-        }
-        2 -> { // Telegram Chat Review
-            val chatBgPaint = Paint().apply {
-                color = if (style.isDark) 0xFF17212B.toInt() else 0xFFF0F4F8.toInt()
-                isAntiAlias = true
-            }
-            canvas.drawRoundRect(80f, 320f, (width - 80).toFloat(), 1520f, 28f, 28f, chatBgPaint)
-
-            // Chat Header
-            val avatarPaint = Paint().apply {
-                color = style.accentText
-                isAntiAlias = true
-            }
-            canvas.drawCircle(160f, 410f, 50f, avatarPaint)
-
-            val initials = reviewData.clientName.take(2).uppercase(Locale.getDefault())
-            val avatarTextPaint = Paint().apply {
-                color = Color.White.hashCode()
-                textSize = 40f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                textAlign = Paint.Align.CENTER
-                isAntiAlias = true
-            }
-            canvas.drawText(initials.ifBlank { "💅" }, 160f, 424f, avatarTextPaint)
-
-            val clientTitlePaint = Paint().apply {
-                color = if (style.isDark) Color.White.hashCode() else 0xFF0F172A.toInt()
-                textSize = 38f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                isAntiAlias = true
-            }
-            canvas.drawText(reviewData.clientName, 240f, 400f, clientTitlePaint)
-
-            val serviceBadgePaint = Paint().apply {
-                color = style.accentText
-                textSize = 28f
-                isAntiAlias = true
-            }
-            canvas.drawText("💅 ${reviewData.serviceTitle}", 240f, 440f, serviceBadgePaint)
-
-            // Incoming Message Bubble
-            val bubblePaint = Paint().apply {
-                color = if (style.isDark) 0xFF182533.toInt() else Color.White.hashCode()
-                isAntiAlias = true
-            }
-            canvas.drawRoundRect(120f, 500f, (width - 120).toFloat(), 1050f, 24f, 24f, bubblePaint)
-
-            // Rating Stars
-            val stars = "⭐️".repeat(reviewData.rating.coerceIn(1, 5))
-            val starsPaint = Paint().apply {
-                textSize = 44f
-                isAntiAlias = true
-            }
-            canvas.drawText(stars, 160f, 570f, starsPaint)
-
-            // Multiline review text
-            val reviewTextPaint = Paint().apply {
-                color = if (style.isDark) Color.White.hashCode() else 0xFF1E293B.toInt()
-                textSize = 32f
-                isAntiAlias = true
-            }
-            val words = reviewData.reviewText.split(" ")
-            var line = ""
-            var textY = 640f
-            for (w in words) {
-                val test = if (line.isEmpty()) w else "$line $w"
-                if (reviewTextPaint.measureText(test) < 740f) {
-                    line = test
-                } else {
-                    canvas.drawText(line, 160f, textY, reviewTextPaint)
-                    line = w
-                    textY += 50f
-                }
-            }
-            if (line.isNotEmpty()) {
-                canvas.drawText(line, 160f, textY, reviewTextPaint)
-            }
-
-            // Timestamp in client bubble
-            val timePaint = Paint().apply {
-                color = if (style.isDark) 0xFF6C7883.toInt() else 0xFF94A3B8.toInt()
-                textSize = 22f
-                textAlign = Paint.Align.RIGHT
-                isAntiAlias = true
-            }
-            canvas.drawText(reviewData.timestamp, (width - 150).toFloat(), 1020f, timePaint)
-
-            // Master Reply Bubble
-            val replyBgPaint = Paint().apply {
-                color = if (style.isDark) 0xFF2B5278.toInt() else 0xFFE0F2FE.toInt()
-                isAntiAlias = true
-            }
-            canvas.drawRoundRect(220f, 1100f, (width - 120).toFloat(), 1460f, 24f, 24f, replyBgPaint)
-
-            val replyHeaderPaint = Paint().apply {
-                color = if (style.isDark) 0xFF80C4F8.toInt() else 0xFF0284C7.toInt()
-                textSize = 30f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                isAntiAlias = true
-            }
-            canvas.drawText("MasterCRM Відповідь:", 260f, 1160f, replyHeaderPaint)
-
-            val replyTextPaint = Paint().apply {
-                color = if (style.isDark) Color.White.hashCode() else 0xFF0F172A.toInt()
-                textSize = 30f
-                isAntiAlias = true
-            }
-            val rWords = reviewData.masterReply.split(" ")
-            var rLine = ""
-            var rY = 1220f
-            for (w in rWords) {
-                val test = if (rLine.isEmpty()) w else "$rLine $w"
-                if (replyTextPaint.measureText(test) < 680f) {
-                    rLine = test
-                } else {
-                    canvas.drawText(rLine, 260f, rY, replyTextPaint)
-                    rLine = w
-                    rY += 48f
-                }
-            }
-            if (rLine.isNotEmpty()) {
-                canvas.drawText(rLine, 260f, rY, replyTextPaint)
-            }
-
-            canvas.drawText("${reviewData.timestamp} ✓✓", (width - 150).toFloat(), 1430f, timePaint)
+            canvas.drawText("18:44 ✓✓", replyRect.right - 30f, replyRect.bottom - 20f, timePaint)
         }
     }
 
-    // 5. Branded Footer
-    val footerBoxPaint = Paint().apply {
-        color = style.cardBg
-        style = Paint.Style.FILL
-        isAntiAlias = true
+    fun shareBitmapToStories(context: Context, bitmap: Bitmap) {
+        val dir = File(context.cacheDir, "stories").apply { mkdirs() }
+        val file = File(dir, "mastercrm_story_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Поділитися в Stories"))
     }
-    val footerBorderPaint = Paint().apply {
-        color = style.cardBorder
-        style = Paint.Style.STROKE
-        strokeWidth = 2.5f
-        isAntiAlias = true
-    }
-    canvas.drawRoundRect(100f, 1720f, (width - 100).toFloat(), 1820f, 20f, 20f, footerBoxPaint)
-    canvas.drawRoundRect(100f, 1720f, (width - 100).toFloat(), 1820f, 20f, 20f, footerBorderPaint)
-
-    val footerPaint = Paint().apply {
-        color = style.accentText
-        textSize = 32f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        textAlign = Paint.Align.CENTER
-        isAntiAlias = true
-    }
-    canvas.drawText(footerText, (width / 2).toFloat(), 1782f, footerPaint)
-
-    return bitmap
 }
 
-fun shareBitmapStory(context: Context, bitmap: Bitmap, fileName: String) {
-    val storiesDir = File(context.cacheDir, "stories").apply { mkdirs() }
-    val file = File(storiesDir, fileName)
-
-    FileOutputStream(file).use { out ->
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-    }
-
-    val contentUri: Uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        file
-    )
-
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "image/png"
-        putExtra(Intent.EXTRA_STREAM, contentUri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "Поділитися у Instagram Stories"))
-}
-
+// =====================================================================
+// 3. ГОЛОВНИЙ ЕКРАН МАРКЕТИНГУ З LIVE-ПРЕВ'Ю ТА КОНСТРУКТОРОМ
+// =====================================================================
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MarketingScreen() {
-    val app = MasterCrmApp.instance
+fun MarketingStudioScreen(
+    studioName: String = "MasterCRM Studio",
+    // Функція, що повертає РЕАЛЬНО вільні віконця з локальної Room БД на вибрану дату
+    getRealFreeSlotsForDate: (String) -> List<String>,
+    initialServices: List<ServiceStoryItem>,
+    clientsWithReviews: List<ClientStoryOption>
+) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
-    var selectedMode by remember { mutableStateOf(0) } // 0 = Free Slots, 1 = Price List, 2 = Review
-    val modes = listOf("Вільні віконця", "Прайс-лист", "Відгук клієнта")
+    var selectedMode by remember { mutableStateOf(StoryMode.FREE_SLOTS) }
+    var selectedStyle by remember { mutableStateOf(CanvaStyle.GLAMOUR_DARK) }
 
-    var selectedStyle by remember { mutableStateOf(StoryStyle.GLAMOUR_DARK) }
-
-    // Mode 0: Free Slots State
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
-    var freeSlotsTitle by remember { mutableStateOf("ВІЛЬНІ ВІКОНЦЯ 💅") }
-    var freeSlotsSubtitle by remember { mutableStateOf("Оберіть зручний час для вашого манікюру") }
-    var freeSlotsFooter by remember { mutableStateOf("Онлайн-запис через Telegram бот або в Direct! 💌") }
-    var customTimeSlots by remember { mutableStateOf(mutableListOf<String>()) }
-    var activeSlotToggles by remember { mutableStateOf(mapOf<String, Boolean>()) }
-    var showAddCustomSlotDialog by remember { mutableStateOf(false) }
-
-    // Mode 1: Price List State
-    val allServices by app.database.serviceDao().getActiveServicesFlow().collectAsState(initial = emptyList())
-    var priceTitle by remember { mutableStateOf("ПРАЙС-ЛИСТ ПОСЛУГ ✨") }
-    var priceSubtitle by remember { mutableStateOf("Турбота та краса ваших нігтів") }
-    var priceFooter by remember { mutableStateOf("Чекаємо на вас у нашій затишній студії! ☕️") }
-    var showDurationInPrice by remember { mutableStateOf(true) }
-    var includedServiceIds by remember { mutableStateOf(setOf<String>()) }
-
-    // Mode 2: Client Review State
-    val allClients by app.database.clientDao().getAllClientsFlow().collectAsState(initial = emptyList())
-    val allReviews by app.database.reviewDao().getAllReviewsFlow().collectAsState(initial = emptyList())
-    var selectedClient by remember { mutableStateOf<ClientEntity?>(null) }
-    var reviewTitle by remember { mutableStateOf("ВІДГУКИ КЛІЄНТІВ ❤️") }
-    var reviewSubtitle by remember { mutableStateOf("Чесні враження про наші процедури") }
-    var reviewClientName by remember { mutableStateOf("Олена (Клієнтка)") }
-    var reviewServiceTitle by remember { mutableStateOf("Комплекс манікюру") }
-    var reviewRating by remember { mutableStateOf(5) }
-    var reviewText by remember { mutableStateOf("Неймовірна робота майстра! Манікюр тримається вже 4-й тиждень без жодної відслойки. Кава та атмосфера на висоті! Дуже дякую! ❤️") }
-    var reviewMasterReply by remember { mutableStateOf("Олено, щиро дякуємо за довіру! Завжди раді бачити вас знову! ✨") }
-    var reviewFooter by remember { mutableStateOf("Запис 24/7 у нашому Telegram боті! 💌") }
-
-    // Sync included services on first load
-    LaunchedEffect(allServices) {
-        if (includedServiceIds.isEmpty() && allServices.isNotEmpty()) {
-            includedServiceIds = allServices.take(6).map { it.id }.toSet()
-        }
+    // --- Стан для Вільних віконець ---
+    val next7Days = remember {
+        (0..6).map { LocalDate.now().plusDays(it.toLong()) }
+    }
+    var selectedDate by remember { mutableStateOf(next7Days.first()) }
+    val dateIso = selectedDate.toString()
+    val dateFormatted = remember(selectedDate) {
+        selectedDate.format(DateTimeFormatter.ofPattern("d MMMM (EEEE)", Locale("uk", "UA")))
     }
 
-    // Dynamic Free Slots Calculation for selectedDate
-    val dateAppointments by app.database.appointmentDao().getAppointmentsByDateFlow(
-        selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-    ).collectAsState(initial = emptyList())
+    // Реальні вільні слоти на цей день із БД + можливість вмикати/вимикати та додавати свій час
+    var availableDaySlots by remember(dateIso) {
+        mutableStateOf(getRealFreeSlotsForDate(dateIso).ifEmpty { listOf("10:00", "12:00", "14:30", "16:00", "18:00") })
+    }
+    var activeSlots by remember(dateIso) {
+        mutableStateOf(availableDaySlots.toSet())
+    }
+    var showAddSlotDialog by remember { mutableStateOf(false) }
+    var customTimeInput by remember { mutableStateOf("") }
 
-    val calculatedFreeSlots = remember(selectedDate, dateAppointments, customTimeSlots) {
-        val busyTimes = dateAppointments
-            .filter { it.status in listOf("PENDING", "CONFIRMED", "COMPLETED") }
-            .map { it.startTime }
-            .toSet()
+    // --- Стан для Прайс-листа ---
+    var serviceItems by remember(initialServices) { mutableStateOf(initialServices) }
+    var showDurationOnPrice by remember { mutableStateOf(true) }
 
-        val generated = mutableListOf<String>()
-        var cur = LocalTime.of(10, 0)
-        val end = LocalTime.of(19, 0)
-        while (!cur.isAfter(end)) {
-            val timeStr = cur.format(DateTimeFormatter.ofPattern("HH:mm"))
-            if (!busyTimes.contains(timeStr)) {
-                generated.add(timeStr)
+    // --- Стан для Відгуків (Опціональний вибір клієнта) ---
+    var clientDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedClient by remember { mutableStateOf<ClientStoryOption?>(null) }
+    var reviewClientName by remember { mutableStateOf("Аліна") }
+    var reviewServiceTitle by remember { mutableStateOf("Комплекс: Манікюр + Покриття") }
+    var reviewStars by remember { mutableIntStateOf(5) }
+    var reviewComment by remember {
+        mutableStateOf("Дівчата, це найкращий манікюр у моєму житті! Минуло 3 тижні — жодної відслойки, кутикула ідеальна 💖")
+    }
+    var reviewMasterReply by remember {
+        mutableStateOf("Дякуємо за довіру! Чекаємо на наступну корекцію ❤️")
+    }
+
+    // --- Заголовки ---
+    var headerText by remember(selectedMode) {
+        mutableStateOf(
+            when (selectedMode) {
+                StoryMode.FREE_SLOTS -> "ВІЛЬНІ ВІКОНЦЯ"
+                StoryMode.PRICE_LIST -> "ПРАЙС ПОСЛУГ"
+                StoryMode.CLIENT_REVIEW -> "ВІДГУКИ КЛІЄНТІВ"
             }
-            cur = cur.plusMinutes(90)
-        }
-        (generated + customTimeSlots).distinct().sorted()
+        )
     }
+    var footerText by remember { mutableStateOf("Запис у Direct або через Telegram-бот у шапці профілю 💅") }
 
-    // Initialize toggles for slots
-    LaunchedEffect(calculatedFreeSlots) {
-        val newMap = activeSlotToggles.toMutableMap()
-        for (slot in calculatedFreeSlots) {
-            if (!newMap.containsKey(slot)) {
-                newMap[slot] = true
-            }
-        }
-        activeSlotToggles = newMap
-    }
-
-    val activeSelectedSlots = remember(calculatedFreeSlots, activeSlotToggles) {
-        calculatedFreeSlots.filter { activeSlotToggles[it] != false }
-    }
-
-    // Active price items
-    val activePriceItems = remember(allServices, includedServiceIds, showDurationInPrice) {
-        val list = if (allServices.isNotEmpty()) {
-            allServices.filter { includedServiceIds.contains(it.id) }.map { s ->
-                val title = if (showDurationInPrice) "${s.title} (${s.durationMinutes} хв)" else s.title
-                title to "${s.price.toInt()} грн"
-            }
-        } else {
-            listOf(
-                "Комплекс манікюру (90 хв)" to "650 грн",
-                "Гігієнічний манікюр (45 хв)" to "350 грн",
-                "Педикюр з покриттям (80 хв)" to "800 грн",
-                "Зняття матеріалу (30 хв)" to "150 грн",
-                "Дизайн нігтів (20 хв)" to "100 грн"
-            )
-        }
-        list
-    }
-
-    // Real-Time Live Bitmap Generation
-    var liveBitmap by remember { mutableStateOf<Bitmap?>(null) }
-
-    LaunchedEffect(
-        selectedMode,
-        selectedStyle,
-        freeSlotsTitle,
-        freeSlotsSubtitle,
-        freeSlotsFooter,
-        selectedDate,
-        activeSelectedSlots,
-        priceTitle,
-        priceSubtitle,
-        priceFooter,
-        activePriceItems,
-        reviewTitle,
-        reviewSubtitle,
-        reviewClientName,
-        reviewServiceTitle,
-        reviewRating,
-        reviewText,
-        reviewMasterReply,
-        reviewFooter
+    // --- Миттєва генерація Live-Прев'ю Bitmap ---
+    val previewBitmap = remember(
+        selectedMode, selectedStyle, studioName, headerText, footerText,
+        dateFormatted, activeSlots, availableDaySlots, serviceItems, showDurationOnPrice,
+        reviewClientName, reviewServiceTitle, reviewStars, reviewComment, reviewMasterReply
     ) {
-        withContext(Dispatchers.Default) {
-            val formattedDate = selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale("uk")))
-                .replaceFirstChar { it.uppercase() }
-
-            val bmp = when (selectedMode) {
-                0 -> renderCanvaStoryBitmap(
-                    mode = 0,
-                    style = selectedStyle,
-                    headerTitle = freeSlotsTitle,
-                    headerSubtitle = freeSlotsSubtitle,
-                    footerText = freeSlotsFooter,
-                    slotsDateString = formattedDate,
-                    activeTimeSlots = activeSelectedSlots,
-                    activeServices = emptyList(),
-                    reviewData = ReviewStoryData("", 5, "", "", "")
-                )
-                1 -> renderCanvaStoryBitmap(
-                    mode = 1,
-                    style = selectedStyle,
-                    headerTitle = priceTitle,
-                    headerSubtitle = priceSubtitle,
-                    footerText = priceFooter,
-                    slotsDateString = "",
-                    activeTimeSlots = emptyList(),
-                    activeServices = activePriceItems,
-                    reviewData = ReviewStoryData("", 5, "", "", "")
-                )
-                else -> renderCanvaStoryBitmap(
-                    mode = 2,
-                    style = selectedStyle,
-                    headerTitle = reviewTitle,
-                    headerSubtitle = reviewSubtitle,
-                    footerText = reviewFooter,
-                    slotsDateString = "",
-                    activeTimeSlots = emptyList(),
-                    activeServices = emptyList(),
-                    reviewData = ReviewStoryData(
-                        clientName = reviewClientName,
-                        rating = reviewRating,
-                        reviewText = reviewText,
-                        masterReply = reviewMasterReply,
-                        serviceTitle = reviewServiceTitle
-                    )
-                )
-            }
-            withContext(Dispatchers.Main) {
-                liveBitmap = bmp
-            }
-        }
+        CanvaStoryRenderer.renderStoryBitmap(
+            mode = selectedMode,
+            style = selectedStyle,
+            studioName = studioName,
+            headerText = headerText,
+            footerText = footerText,
+            dateLabel = dateFormatted,
+            selectedSlots = availableDaySlots.filter { it in activeSlots },
+            services = serviceItems,
+            showDurationOnPrice = showDurationOnPrice,
+            reviewClientName = reviewClientName,
+            reviewServiceTitle = reviewServiceTitle,
+            reviewStars = reviewStars,
+            reviewComment = reviewComment,
+            reviewMasterReply = reviewMasterReply
+        )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Canva Story Studio ✨", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 1. Перемикач типу шаблону (Вільні вікна / Прайс / Відгук)
+        item {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                StoryMode.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = selectedMode == mode,
+                        onClick = { selectedMode = mode },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = StoryMode.entries.size)
+                    ) {
+                        Text(mode.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // 1. Live Preview Card (9:16 Aspect Ratio)
-            item {
+
+        // 2. LIVE PREVIEW ПРЯМО В ЗАСТОСУНКУ + КНОПКА ПОДІЛИТИСЯ
+        item {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp)
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth(0.68f)
-                            .aspectRatio(9f / 16f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                    ) {
-                        if (liveBitmap != null) {
-                            Image(
-                                bitmap = liveBitmap!!.asImageBitmap(),
-                                contentDescription = "Live Story Preview",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = RosePrimary)
-                            }
-                        }
-                    }
+                    Text(
+                        text = "👁 Передперегляд Stories (Наживо)",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(10.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Image(
+                        bitmap = previewBitmap.asImageBitmap(),
+                        contentDescription = "Story Live Preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth(0.62f)
+                            .aspectRatio(9f / 16f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
+                    )
+
+                    Spacer(Modifier.height(14.dp))
 
                     Button(
-                        onClick = {
-                            liveBitmap?.let { bmp ->
-                                val fileName = when (selectedMode) {
-                                    0 -> "story_slots_${System.currentTimeMillis()}.png"
-                                    1 -> "story_prices_${System.currentTimeMillis()}.png"
-                                    else -> "story_review_${System.currentTimeMillis()}.png"
-                                }
-                                shareBitmapStory(context, bmp, fileName)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .height(48.dp)
+                        onClick = { CanvaStoryRenderer.shareBitmapToStories(context, previewBitmap) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Поділитися в Instagram Stories", fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Share, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Поділитися в Instagram Stories / Telegram", fontWeight = FontWeight.Bold)
                     }
                 }
             }
+        }
 
-            // 2. Canva Visual Style Selector (5 signature styles)
-            item {
-                Text("Оберіть стиль дизайну:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(modifier = Modifier.height(6.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(StoryStyle.values()) { style ->
-                        FilterChip(
-                            selected = selectedStyle == style,
-                            onClick = { selectedStyle = style },
-                            label = { Text(style.title, fontSize = 12.sp) },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .background(Color(style.bgStart), CircleShape)
-                                        .border(1.dp, Color.Gray, CircleShape)
-                                )
-                            }
-                        )
-                    }
+        // 3. ВИБІР ОДНОГО З 5 СТИЛІВ CANVA
+        item {
+            Text("🎨 Стиль оформлення Canva (5 шаблонів):", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(CanvaStyle.entries) { style ->
+                    val isSelected = style == selectedStyle
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedStyle = style },
+                        label = { Text(style.label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = if (isSelected) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        } else null
+                    )
                 }
             }
+        }
 
-            // 3. Mode Selector Tabs
-            item {
-                TabRow(
-                    selectedTabIndex = selectedMode,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = RosePrimary
-                ) {
-                    modes.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedMode == index,
-                            onClick = { selectedMode = index },
-                            text = { Text(title, fontWeight = if (selectedMode == index) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp) }
-                        )
-                    }
-                }
-            }
-
-            // 4. Mode-specific Controls
-            when (selectedMode) {
-                0 -> { // Mode 1: Free Slots Controls
-                    item {
-                        Text("Оберіть дату на найближчі 14 днів:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items((0..13).toList()) { dayOffset ->
-                                val date = LocalDate.now().plusDays(dayOffset.toLong())
-                                val isSelected = selectedDate == date
-                                val label = date.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale("uk")))
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { selectedDate = date },
-                                    label = { Text(label, fontSize = 11.sp) }
-                                )
+        // 4. НАЛАШТУВАННЯ ЗАЛЕЖНО ВІД ОБРАНОГО РЕЖИМУ
+        when (selectedMode) {
+            StoryMode.FREE_SLOTS -> {
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("📅 1. Оберіть день (підтягуються реально вільні вікна):", style = MaterialTheme.typography.titleSmall)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(next7Days) { d ->
+                                    val label = d.format(DateTimeFormatter.ofPattern("dd.MM (EE)", Locale("uk", "UA")))
+                                    FilterChip(
+                                        selected = d == selectedDate,
+                                        onClick = { selectedDate = d },
+                                        label = { Text(label) }
+                                    )
+                                }
                             }
-                        }
-                    }
 
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Віконця на цю дату (натисніть щоб приховати):", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            TextButton(onClick = { showAddCustomSlotDialog = true }) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text("Свій час", fontSize = 12.sp)
-                            }
-                        }
+                            HorizontalDivider()
 
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            calculatedFreeSlots.forEach { slot ->
-                                val isChecked = activeSlotToggles[slot] != false
-                                FilterChip(
-                                    selected = isChecked,
-                                    onClick = {
-                                        activeSlotToggles = activeSlotToggles.toMutableMap().apply {
-                                            put(slot, !isChecked)
-                                        }
-                                    },
-                                    label = { Text(slot, fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Normal) },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (isChecked) Icons.Default.Check else Icons.Default.Close,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
+                            Text("⏰ 2. Натисніть на час, щоб прибрати або додати на картинку:", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                availableDaySlots.forEach { slot ->
+                                    val isSlotChecked = slot in activeSlots
+                                    FilterChip(
+                                        selected = isSlotChecked,
+                                        onClick = {
+                                            activeSlots = if (isSlotChecked) activeSlots - slot else activeSlots + slot
+                                        },
+                                        label = { Text(slot) },
+                                        leadingIcon = if (isSlotChecked) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null
+                                    )
+                                }
+
+                                AssistChip(
+                                    onClick = { showAddSlotDialog = true },
+                                    label = { Text("+ Свій час") },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp)) }
                                 )
                             }
                         }
                     }
-
-                    item {
-                        OutlinedTextField(
-                            value = freeSlotsTitle,
-                            onValueChange = { freeSlotsTitle = it },
-                            label = { Text("Заголовок") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = freeSlotsFooter,
-                            onValueChange = { freeSlotsFooter = it },
-                            label = { Text("Нижній заклик до дії (CTA)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
                 }
-                1 -> { // Mode 2: Price List Controls
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Показувати тривалість процедури (хв)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = showDurationInPrice,
-                                onCheckedChange = { showDurationInPrice = it }
-                            )
-                        }
-                    }
+            }
 
-                    item {
-                        Text("Оберіть послуги для сторіс (з бази без видалення):", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
-
-                    items(allServices, key = { it.id }) { service ->
-                        val isChecked = includedServiceIds.contains(service.id)
-                        ElevatedCard(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.elevatedCardColors(
-                                containerColor = if (isChecked) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+            StoryMode.PRICE_LIST -> {
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(service.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text("${service.price.toInt()} грн • ${service.durationMinutes} хв", color = Color.Gray, fontSize = 12.sp)
-                                }
-                                Switch(
-                                    checked = isChecked,
-                                    onCheckedChange = {
-                                        includedServiceIds = if (it) {
-                                            includedServiceIds + service.id
-                                        } else {
-                                            includedServiceIds - service.id
-                                        }
-                                    }
-                                )
+                                Text("Показувати тривалість (хв)", style = MaterialTheme.typography.bodyLarge)
+                                Switch(checked = showDurationOnPrice, onCheckedChange = { showDurationOnPrice = it })
                             }
-                        }
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = priceTitle,
-                            onValueChange = { priceTitle = it },
-                            label = { Text("Заголовок прайсу") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = priceFooter,
-                            onValueChange = { priceFooter = it },
-                            label = { Text("Нижній текст сторіс") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-                2 -> { // Mode 3: Telegram Review Controls
-                    item {
-                        var expandedClientDropdown by remember { mutableStateOf(false) }
-
-                        ExposedDropdownMenuBox(
-                            expanded = expandedClientDropdown,
-                            onExpandedChange = { expandedClientDropdown = it },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = selectedClient?.let { "${it.firstName} ${it.lastName ?: ""}".trim() } ?: "✍️ Вільний ввід (Без прив'язки)",
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Вибір клієнта для відгуку") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedClientDropdown) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor()
+                            HorizontalDivider()
+                            Text(
+                                "💅 Оберіть послуги для генерації прайсу (вимкнені залишаються в базі, але ховаються з картинки):",
+                                style = MaterialTheme.typography.titleSmall
                             )
 
-                            ExposedDropdownMenu(
-                                expanded = expandedClientDropdown,
-                                onDismissRequest = { expandedClientDropdown = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("✍️ Вільний ввід (Без прив'язки до клієнта)") },
-                                    onClick = {
-                                        selectedClient = null
-                                        expandedClientDropdown = false
-                                    }
-                                )
-                                allClients.forEach { client ->
-                                    DropdownMenuItem(
-                                        text = { Text("${client.firstName} ${client.lastName ?: ""}".trim()) },
-                                        onClick = {
-                                            selectedClient = client
-                                            reviewClientName = "${client.firstName} ${client.lastName ?: ""}".trim()
-                                            // Auto-fill review if available
-                                            val clientReviews = allReviews.filter { it.clientId == client.id }
-                                            if (clientReviews.isNotEmpty()) {
-                                                val r = clientReviews.first()
-                                                reviewRating = r.rating
-                                                if (!r.comment.isNullOrBlank()) reviewText = r.comment
+                            serviceItems.forEachIndexed { idx, srv ->
+                                ElevatedCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            serviceItems = serviceItems.toMutableList().also {
+                                                it[idx] = srv.copy(includedInStory = !srv.includedInStory)
                                             }
-                                            expandedClientDropdown = false
+                                        },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = srv.includedInStory,
+                                            onCheckedChange = { checked ->
+                                                serviceItems = serviceItems.toMutableList().also {
+                                                    it[idx] = srv.copy(includedInStory = checked)
+                                                }
+                                            }
+                                        )
+                                        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                            Text(srv.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                            Text("${srv.durationMinutes} хв", style = MaterialTheme.typography.bodySmall)
                                         }
+                                        Text("${srv.price} ₴", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                                     }
-                                )
+                                }
                             }
                         }
                     }
+                }
+            }
 
-                    item {
-                        OutlinedTextField(
-                            value = reviewClientName,
-                            onValueChange = { reviewClientName = it },
-                            label = { Text("Ім'я клієнта") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+            StoryMode.CLIENT_REVIEW -> {
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("👤 1. Оберіть клієнта з бази (опціонально) або редагуйте вручну:", style = MaterialTheme.typography.titleSmall)
 
-                    item {
-                        OutlinedTextField(
-                            value = reviewServiceTitle,
-                            onValueChange = { reviewServiceTitle = it },
-                            label = { Text("Назва послуги у відгуку") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Оцінка:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            (1..5).forEach { star ->
-                                FilterChip(
-                                    selected = reviewRating == star,
-                                    onClick = { reviewRating = star },
-                                    label = { Text("⭐ $star", fontSize = 11.sp) }
+                            ExposedDropdownMenuBox(
+                                expanded = clientDropdownExpanded,
+                                onExpandedChange = { clientDropdownExpanded = !clientDropdownExpanded }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedClient?.name ?: "✍️ Вільний ввід (Без прив'язки до клієнта)",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Клієнт") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientDropdownExpanded) },
+                                    modifier = Modifier.menuAnchor().fillMaxWidth()
                                 )
+                                ExposedDropdownMenu(
+                                    expanded = clientDropdownExpanded,
+                                    onDismissRequest = { clientDropdownExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("✍️ Вільний ввід (Без прив'язки до клієнта)") },
+                                        onClick = {
+                                            selectedClient = null
+                                            clientDropdownExpanded = false
+                                        }
+                                    )
+                                    clientsWithReviews.forEach { cl ->
+                                        DropdownMenuItem(
+                                            text = { Text("${cl.name} (${cl.savedReviews.size} відгуків)") },
+                                            onClick = {
+                                                selectedClient = cl
+                                                reviewClientName = cl.name
+                                                reviewServiceTitle = cl.lastServiceTitle
+                                                cl.savedReviews.firstOrNull()?.let { firstRev ->
+                                                    reviewStars = firstRev.rating
+                                                    reviewComment = firstRev.comment
+                                                    reviewServiceTitle = firstRev.serviceTitle
+                                                }
+                                                clientDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
+
+                            // Якщо у вибраного клієнта є збережені відгуки — показуємо чіпи для швидкого підвантаження
+                            selectedClient?.savedReviews?.takeIf { it.isNotEmpty() }?.let { revs ->
+                                Text("Збережені відгуки цього клієнта:", style = MaterialTheme.typography.labelMedium)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(revs) { rv ->
+                                        AssistChip(
+                                            onClick = {
+                                                reviewStars = rv.rating
+                                                reviewComment = rv.comment
+                                                reviewServiceTitle = rv.serviceTitle
+                                            },
+                                            label = { Text("${rv.rating}⭐ ${rv.comment.take(22)}…") }
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = reviewClientName,
+                                onValueChange = { reviewClientName = it },
+                                label = { Text("Ім'я клієнта на скріншоті") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = reviewServiceTitle,
+                                onValueChange = { reviewServiceTitle = it },
+                                label = { Text("Послуга") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            // Вибір кількості зірочок (1..5)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Оцінка:", style = MaterialTheme.typography.bodyMedium)
+                                (1..5).forEach { star ->
+                                    FilterChip(
+                                        selected = reviewStars == star,
+                                        onClick = { reviewStars = star },
+                                        label = { Text("$star ⭐") }
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = reviewComment,
+                                onValueChange = { reviewComment = it },
+                                label = { Text("Текст відгуку клієнта") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 3
+                            )
+
+                            OutlinedTextField(
+                                value = reviewMasterReply,
+                                onValueChange = { reviewMasterReply = it },
+                                label = { Text("Ваша відповідь у чаті (опціонально)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
                         }
                     }
+                }
+            }
+        }
 
-                    item {
-                        OutlinedTextField(
-                            value = reviewText,
-                            onValueChange = { reviewText = it },
-                            label = { Text("Текст відгуку клієнта") },
-                            minLines = 3,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = reviewMasterReply,
-                            onValueChange = { reviewMasterReply = it },
-                            label = { Text("Відповідь майстра") },
-                            minLines = 2,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+        // 5. РЕДАГУВАННЯ ЗАГОЛОВКА ТА ПІДПИСУ СТОРІС
+        item {
+            OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("✏️ Тексти на шаблоні:", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(
+                        value = headerText,
+                        onValueChange = { headerText = it },
+                        label = { Text("Заголовок шаблону") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = footerText,
+                        onValueChange = { footerText = it },
+                        label = { Text("Нижній підпис (CTA)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                 }
             }
         }
     }
 
-    if (showAddCustomSlotDialog) {
-        var inputTime by remember { mutableStateOf("19:30") }
+    // Діалог додавання кастомного часу
+    if (showAddSlotDialog) {
         AlertDialog(
-            onDismissRequest = { showAddCustomSlotDialog = false },
-            title = { Text("Додати вільне віконце") },
+            onDismissRequest = { showAddSlotDialog = false },
+            title = { Text("Додати свій час") },
             text = {
                 OutlinedTextField(
-                    value = inputTime,
-                    onValueChange = { inputTime = it },
-                    label = { Text("Час (напр. 19:30)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    value = customTimeInput,
+                    onValueChange = { customTimeInput = it },
+                    placeholder = { Text("Наприклад: 19:30") },
+                    singleLine = true
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (inputTime.isNotBlank()) {
-                            customTimeSlots = (customTimeSlots + inputTime.trim()).toMutableList()
-                            activeSlotToggles = activeSlotToggles.toMutableMap().apply {
-                                put(inputTime.trim(), true)
-                            }
+                TextButton(onClick = {
+                    val clean = customTimeInput.trim()
+                    if (clean.isNotEmpty()) {
+                        if (clean !in availableDaySlots) {
+                            availableDaySlots = (availableDaySlots + clean).sorted()
                         }
-                        showAddCustomSlotDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
-                ) {
+                        activeSlots = activeSlots + clean
+                    }
+                    customTimeInput = ""
+                    showAddSlotDialog = false
+                }) {
                     Text("Додати")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddCustomSlotDialog = false }) { Text("Скасувати") }
+                TextButton(onClick = { showAddSlotDialog = false }) { Text("Скасувати") }
             }
         )
     }
+}
+
+// =====================================================================
+// 4. ТОЧКА ВХОДУ MarketingScreen (ЗВ'ЯЗКА З ROOM БД ТА РЕАЛЬНИМИ ДАНИМИ)
+// =====================================================================
+@Composable
+fun MarketingScreen() {
+    val app = MasterCrmApp.instance
+
+    // 1. Послуги з Room
+    val serviceEntities by app.database.serviceDao().getActiveServicesFlow().collectAsState(initial = emptyList())
+    val services = remember(serviceEntities) {
+        if (serviceEntities.isEmpty()) {
+            listOf(
+                ServiceStoryItem("s-1", "Комплекс: Зняття + Манікюр + Покриття", 650, 90),
+                ServiceStoryItem("s-2", "Гігієнічний манікюр", 350, 45),
+                ServiceStoryItem("s-3", "Нарощування нігтів (Gel/Polygel)", 950, 150),
+                ServiceStoryItem("s-4", "Дизайн френч / градієнт", 150, 30),
+                ServiceStoryItem("s-5", "Ремонт / укріплення 1 нігтя", 60, 15)
+            )
+        } else {
+            serviceEntities.map {
+                ServiceStoryItem(
+                    id = it.id,
+                    title = it.title,
+                    price = it.price.toInt(),
+                    durationMinutes = it.durationMinutes,
+                    includedInStory = true
+                )
+            }
+        }
+    }
+
+    // 2. Клієнти, Відгуки та Записи для контексту
+    val clientEntities by app.database.clientDao().getAllClientsFlow().collectAsState(initial = emptyList())
+    val reviewEntities by app.database.reviewDao().getAllReviewsFlow().collectAsState(initial = emptyList())
+    val appointmentEntities by app.database.appointmentDao().getAllAppointmentsFlow().collectAsState(initial = emptyList())
+
+    val clientsWithReviews = remember(clientEntities, reviewEntities, appointmentEntities, serviceEntities) {
+        clientEntities.map { cl ->
+            val clReviews = reviewEntities.filter { it.clientId == cl.id }.map { rv ->
+                val appFound = appointmentEntities.find { it.id == rv.appointmentId }
+                val srvTitle = appFound?.serviceId?.let { sId -> serviceEntities.find { it.id == sId }?.title } ?: "Комплекс Манікюр"
+                SavedReviewOption(
+                    id = rv.id,
+                    rating = rv.rating,
+                    comment = rv.comment ?: "",
+                    serviceTitle = srvTitle
+                )
+            }
+            val lastApp = appointmentEntities.filter { it.clientId == cl.id }.maxByOrNull { it.date }
+            val lastSrvTitle = lastApp?.serviceId?.let { sId -> serviceEntities.find { it.id == sId }?.title } ?: "Комплекс Манікюр"
+            val fullName = "${cl.firstName} ${cl.lastName.orEmpty()}".trim()
+            ClientStoryOption(
+                id = cl.id,
+                name = fullName.ifEmpty { "Клієнт" },
+                lastServiceTitle = lastSrvTitle,
+                savedReviews = clReviews
+            )
+        }
+    }
+
+    MarketingStudioScreen(
+        studioName = "MasterCRM Studio",
+        getRealFreeSlotsForDate = { dateIso ->
+            val dayApps = appointmentEntities.filter { it.date == dateIso && !it.status.startsWith("CANCELLED") }
+            val standardSlots = listOf("09:00", "11:00", "13:30", "15:30", "18:00")
+            standardSlots.filter { slot ->
+                dayApps.none { it.startTime == slot }
+            }
+        },
+        initialServices = services,
+        clientsWithReviews = clientsWithReviews
+    )
 }
