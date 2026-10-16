@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.mastercrm.MasterCrmApp
 import java.io.File
@@ -566,7 +568,7 @@ fun MarketingStudioScreen(
                         onClick = { selectedMode = mode },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = StoryMode.entries.size)
                     ) {
-                        Text(mode.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(mode.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
                     }
                 }
             }
@@ -751,9 +753,10 @@ fun MarketingStudioScreen(
                                 onExpandedChange = { clientDropdownExpanded = !clientDropdownExpanded }
                             ) {
                                 OutlinedTextField(
-                                    value = selectedClient?.name ?: "✍️ Вільний ввід (Без прив'язки до клієнта)",
+                                    value = selectedClient?.name ?: "✍️ Вільний ввід (Без прив'язки)",
                                     onValueChange = {},
                                     readOnly = true,
+                                    singleLine = true,
                                     label = { Text("Клієнт") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientDropdownExpanded) },
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
@@ -821,14 +824,45 @@ fun MarketingStudioScreen(
                                 singleLine = true
                             )
 
-                            // Вибір кількості зірочок (1..5)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Оцінка:", style = MaterialTheme.typography.bodyMedium)
-                                (1..5).forEach { star ->
-                                    FilterChip(
-                                        selected = reviewStars == star,
-                                        onClick = { reviewStars = star },
-                                        label = { Text("$star ⭐") }
+                            // Компактний інтерактивний 5-зірковий рейтинг (1..5)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Оцінка:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    (1..5).forEach { star ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (star <= reviewStars) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                                )
+                                                .clickable { reviewStars = star },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "⭐",
+                                                fontSize = 18.sp,
+                                                modifier = Modifier.alpha(if (star <= reviewStars) 1f else 0.35f)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.width(2.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = "$reviewStars / 5",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
                             }

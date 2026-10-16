@@ -15,6 +15,8 @@ import com.mastercrm.ui.navigation.Screen
 import com.mastercrm.ui.screens.*
 import com.mastercrm.ui.theme.MasterCRMTheme
 import com.mastercrm.ui.theme.RosePrimary
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -90,7 +92,15 @@ class MainActivity : ComponentActivity() {
                                                 tint = if (isSelected) RosePrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         },
-                                        label = { Text(item.label) }
+                                        label = {
+                                            Text(
+                                                text = item.label,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
                                     )
                                 }
                             }
