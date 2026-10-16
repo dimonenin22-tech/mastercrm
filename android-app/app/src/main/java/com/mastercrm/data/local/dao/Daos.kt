@@ -148,7 +148,7 @@ interface ProductDao {
 
 @Dao
 interface ReviewDao {
-    @Query("SELECT * FROM reviews WHERE deleted = 0 ORDER BY createdAt DESC")
+    @Query("SELECT * FROM reviews WHERE deleted = 0 ORDER BY updatedAt DESC")
     fun getAllReviewsFlow(): Flow<List<ReviewEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
