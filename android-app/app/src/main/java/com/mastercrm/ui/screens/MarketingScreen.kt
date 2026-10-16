@@ -166,7 +166,7 @@ object CanvaStoryRenderer {
         val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.accent
             alpha = 28
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         canvas.drawCircle(w * 0.85f, h * 0.12f, 340f, glowPaint)
         canvas.drawCircle(w * 0.15f, h * 0.85f, 420f, glowPaint)
@@ -227,11 +227,11 @@ object CanvaStoryRenderer {
 
         val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.cardBg
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.accent
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = 4f
         }
         val slotTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -275,12 +275,12 @@ object CanvaStoryRenderer {
     ) {
         val containerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.cardBg
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.accent
             alpha = 90
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = 3f
         }
         val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -338,11 +338,11 @@ object CanvaStoryRenderer {
         // Зовнішня рамка вікна Telegram
         val chatBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#17212B")
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = style.accent
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = 4f
         }
         canvas.drawRoundRect(chatRect, 44f, 44f, chatBgPaint)
@@ -381,7 +381,7 @@ object CanvaStoryRenderer {
         val bubbleRect = RectF(margin + 45f, chatTop + 220f, w - margin - 90f, chatTop + 720f)
         val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#182533")
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         canvas.drawRoundRect(bubbleRect, 32f, 32f, bubblePaint)
 
@@ -423,7 +423,7 @@ object CanvaStoryRenderer {
             val replyRect = RectF(margin + 160f, chatTop + 770f, w - margin - 45f, chatTop + 960f)
             val replyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#2B5278")
-                style = Paint.Style.FILL
+                this.style = Paint.Style.FILL
             }
             canvas.drawRoundRect(replyRect, 32f, 32f, replyPaint)
 
