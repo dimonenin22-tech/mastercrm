@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -7,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -46,6 +48,7 @@ from app.schemas import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Unified API"])
+_appointment_create_lock = asyncio.Lock()
 
 
 async def get_current_master(
@@ -190,61 +193,9 @@ async def unified_exec(
             }
         })
 
-    # Protected actions: require valid current_master
-    if not current_master:
-        return ApiResponse.fail("UNAUTHORIZED", "Потрібна авторизація пристрою (Authorization: Bearer <device_token>)")
-
-    # 3. Action: sync
-    if action == "sync":
-        since_str = body.get("since")
-        since_dt: Optional[datetime] = None
-        if since_str:
-            try:
-                clean_str = since_str.replace("Z", "+00:00")
-                since_dt = datetime.fromisoformat(clean_str)
-                if since_dt.tzinfo is None:
-                    since_dt = since_dt.replace(tzinfo=timezone.utc)
-            except Exception:
-                since_dt = None
-
-        async def fetch_table(model: Any) -> list[Any]:
-            query = select(model)
-            if since_dt:
-                query = query.where(model.updated_at >= since_dt)
-            res = await db.execute(query)
-            return list(res.scalars().all())
-
-        appointments = await fetch_table(Appointment)
-        clients = await fetch_table(Client)
-        services = await fetch_table(Service)
-        masters = await fetch_table(Master)
-        incomes = await fetch_table(Income)
-        expenses = await fetch_table(Expense)
-        products = await fetch_table(Product)
-        reviews = await fetch_table(Review)
-
-        # Settings dictionary
-        settings_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
-        all_settings = settings_res.scalars().all()
-        settings_map = {s.key: s.value for s in all_settings}
-
-        data = SyncResponseData(
-            appointments=[AppointmentDto.model_validate(a) for a in appointments],
-            clients=[ClientDto.model_validate(c) for c in clients],
-            services=[ServiceDto.model_validate(s) for s in services],
-            masters=[MasterDto.model_validate(m) for m in masters],
-            incomes=[IncomeDto.model_validate(i) for i in incomes],
-            expenses=[ExpenseDto.model_validate(e) for e in expenses],
-            products=[ProductDto.model_validate(p) for p in products],
-            reviews=[ReviewDto.model_validate(r) for r in reviews],
-            settings=settings_map,
-            server_sync_time=utc_now().isoformat(),
-        )
-        return ApiResponse.ok(data.model_dump())
-
-    # 4. Action: slots_get
+    # Public / accessible action: slots_get
     if action == "slots_get":
-        master_id = body.get("master_id") or current_master.id
+        master_id = body.get("master_id") or (current_master.id if current_master else "m-01")
         service_id = body.get("service_id")
         date_str = body.get("date")  # YYYY-MM-DD
 
@@ -309,97 +260,153 @@ async def unified_exec(
             "available_slots": available_slots,
         })
 
+    # Protected actions: require valid current_master
+    if not current_master:
+        return ApiResponse.fail("UNAUTHORIZED", "Потрібна авторизація пристрою (Authorization: Bearer <device_token>)")
+
+    # 3. Action: sync
+    if action == "sync":
+        since_str = body.get("since")
+        since_dt: Optional[datetime] = None
+        if since_str:
+            try:
+                clean_str = since_str.replace("Z", "+00:00")
+                since_dt = datetime.fromisoformat(clean_str)
+                if since_dt.tzinfo is None:
+                    since_dt = since_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                since_dt = None
+
+        async def fetch_table(model: Any) -> list[Any]:
+            query = select(model)
+            if since_dt:
+                query = query.where(model.updated_at >= since_dt)
+            res = await db.execute(query)
+            return list(res.scalars().all())
+
+        appointments = await fetch_table(Appointment)
+        clients = await fetch_table(Client)
+        services = await fetch_table(Service)
+        masters = await fetch_table(Master)
+        incomes = await fetch_table(Income)
+        expenses = await fetch_table(Expense)
+        products = await fetch_table(Product)
+        reviews = await fetch_table(Review)
+
+        # Settings dictionary
+        settings_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
+        all_settings = settings_res.scalars().all()
+        settings_map = {s.key: s.value for s in all_settings}
+
+        data = SyncResponseData(
+            appointments=[AppointmentDto.model_validate(a) for a in appointments],
+            clients=[ClientDto.model_validate(c) for c in clients],
+            services=[ServiceDto.model_validate(s) for s in services],
+            masters=[MasterDto.model_validate(m) for m in masters],
+            incomes=[IncomeDto.model_validate(i) for i in incomes],
+            expenses=[ExpenseDto.model_validate(e) for e in expenses],
+            products=[ProductDto.model_validate(p) for p in products],
+            reviews=[ReviewDto.model_validate(r) for r in reviews],
+            settings=settings_map,
+            server_sync_time=utc_now().isoformat(),
+        )
+        return ApiResponse.ok(data.model_dump())
+
     # 5. Action: appointment_create
     if action == "appointment_create":
-        m_id = body.get("master_id") or current_master.id
-        s_id = body.get("service_id")
-        c_id = body.get("client_id")
-        date_str = body.get("date")
-        start_time = body.get("start_time", "10:00")
-        total_price = Decimal(str(body.get("total_price", "0.00")))
-        deposit_amount = Decimal(str(body.get("deposit_amount", "0.00")))
-        is_deposit_paid = bool(body.get("is_deposit_paid", False))
+        async with _appointment_create_lock:
+            m_id = body.get("master_id") or current_master.id
+            s_id = body.get("service_id")
+            c_id = body.get("client_id")
+            date_str = body.get("date")
+            start_time = body.get("start_time", "10:00")
+            total_price = Decimal(str(body.get("total_price", "0.00")))
+            deposit_amount = Decimal(str(body.get("deposit_amount", "0.00")))
+            is_deposit_paid = bool(body.get("is_deposit_paid", False))
 
-        if not s_id or not date_str:
-            return ApiResponse.fail("BAD_REQUEST", "service_id та date є обов'язковими")
+            if not s_id or not date_str:
+                return ApiResponse.fail("BAD_REQUEST", "service_id та date є обов'язковими")
 
-        # Row-level locking on Master to prevent race conditions
-        master_stmt = select(Master).where(Master.id == m_id)
-        if not is_sqlite:
-            master_stmt = master_stmt.with_for_update()
-        m_res = await db.execute(master_stmt)
-        locked_master = m_res.scalar_one_or_none()
-        if not locked_master:
-            return ApiResponse.fail("MASTER_NOT_FOUND", "Майстра не знайдено")
+            # Row-level locking on Master to prevent race conditions
+            master_stmt = select(Master).where(Master.id == m_id)
+            if not is_sqlite:
+                master_stmt = master_stmt.with_for_update()
+            m_res = await db.execute(master_stmt)
+            locked_master = m_res.scalar_one_or_none()
+            if not locked_master:
+                return ApiResponse.fail("MASTER_NOT_FOUND", "Майстра не знайдено")
 
-        srv = await db.get(Service, s_id)
-        if not srv or srv.deleted:
-            return ApiResponse.fail("SERVICE_NOT_FOUND", "Послуга не знайдена")
+            srv = await db.get(Service, s_id)
+            if not srv or srv.deleted:
+                return ApiResponse.fail("SERVICE_NOT_FOUND", "Послуга не знайдена")
 
-        if total_price == Decimal("0.00"):
-            total_price = srv.price
+            if total_price == Decimal("0.00"):
+                total_price = srv.price
 
-        end_time = body.get("end_time") or calculate_end_time(start_time, srv.duration_minutes)
+            end_time = body.get("end_time") or calculate_end_time(start_time, srv.duration_minutes)
 
-        # Check collision if start_time != "За домовленістю"
-        if start_time != "За домовленістю":
-            slot_s = time_to_minutes(start_time)
-            slot_e = time_to_minutes(end_time) + srv.buffer_minutes
+            # Check collision if start_time != "За домовленістю"
+            if start_time != "За домовленістю":
+                slot_s = time_to_minutes(start_time)
+                slot_e = time_to_minutes(end_time) + srv.buffer_minutes
 
-            stmt_conflict = select(Appointment).where(
-                Appointment.master_id == m_id,
-                Appointment.date == date_str,
-                Appointment.deleted.is_(False),
-                Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"]),
-                Appointment.start_time != "За домовленістю"
-            )
-            c_res = await db.execute(stmt_conflict)
-            existing_apts = c_res.scalars().all()
-            for ex in existing_apts:
-                ex_s = time_to_minutes(ex.start_time)
-                ex_e = time_to_minutes(ex.end_time)
-                if slot_s < ex_e and slot_e > ex_s:
-                    return ApiResponse.fail("RESOURCE_BUSY", "Вибраний час уже зайнятий іншим клієнтом")
-
-        # Client resolution
-        if not c_id:
-            c_phone = body.get("client_phone", "+380000000000")
-            c_name = body.get("client_name", "Клієнт")
-            client_stmt = select(Client).where(Client.phone == c_phone, Client.deleted.is_(False))
-            client_res = await db.execute(client_stmt)
-            client = client_res.scalar_one_or_none()
-            if not client:
-                client = Client(
-                    first_name=c_name,
-                    phone=c_phone,
-                    notes=body.get("notes", "")
+                stmt_conflict = select(Appointment).where(
+                    Appointment.master_id == m_id,
+                    Appointment.date == date_str,
+                    Appointment.deleted.is_(False),
+                    Appointment.status.notin_(["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"]),
+                    Appointment.start_time != "За домовленістю"
                 )
-                db.add(client)
-                await db.flush()
-            c_id = client.id
+                c_res = await db.execute(stmt_conflict)
+                existing_apts = c_res.scalars().all()
+                for ex in existing_apts:
+                    ex_s = time_to_minutes(ex.start_time)
+                    ex_e = time_to_minutes(ex.end_time)
+                    if slot_s < ex_e and slot_e > ex_s:
+                        return JSONResponse(
+                            status_code=status.HTTP_409_CONFLICT,
+                            content=ApiResponse.fail("RESOURCE_BUSY", "Вибраний час уже зайнятий іншим клієнтом").model_dump()
+                        )
 
-        new_apt = Appointment(
-            master_id=m_id,
-            client_id=c_id,
-            service_id=s_id,
-            date=date_str,
-            start_time=start_time,
-            end_time=end_time,
-            status=body.get("status", "CONFIRMED"),
-            total_price=total_price,
-            deposit_amount=deposit_amount,
-            is_deposit_paid=is_deposit_paid,
-            cancellation_reason=""
-        )
-        db.add(new_apt)
-        await db.commit()
-        await db.refresh(new_apt)
-        return ApiResponse.ok(AppointmentDto.model_validate(new_apt).model_dump())
+            # Client resolution
+            if not c_id:
+                c_phone = body.get("client_phone", "+380000000000")
+                c_name = body.get("client_name", "Клієнт")
+                client_stmt = select(Client).where(Client.phone == c_phone, Client.deleted.is_(False))
+                client_res = await db.execute(client_stmt)
+                client = client_res.scalar_one_or_none()
+                if not client:
+                    client = Client(
+                        first_name=c_name,
+                        phone=c_phone,
+                        notes=body.get("notes", "")
+                    )
+                    db.add(client)
+                    await db.flush()
+                c_id = client.id
+
+            new_apt = Appointment(
+                master_id=m_id,
+                client_id=c_id,
+                service_id=s_id,
+                date=date_str,
+                start_time=start_time,
+                end_time=end_time,
+                status=body.get("status", "CONFIRMED"),
+                total_price=total_price,
+                deposit_amount=deposit_amount,
+                is_deposit_paid=is_deposit_paid,
+                cancellation_reason=""
+            )
+            db.add(new_apt)
+            await db.commit()
+            await db.refresh(new_apt)
+            return ApiResponse.ok(AppointmentDto.model_validate(new_apt).model_dump())
 
     # 6. Action: appointment_update_status
     if action == "appointment_update_status":
         apt_id = body.get("appointment_id")
-        new_status = body.get("status")
+        new_status = body.get("status") or body.get("new_status")
         reason = body.get("cancellation_reason", "")
 
         if not apt_id or not new_status:
@@ -692,6 +699,14 @@ async def unified_exec(
             is_active=bool(body.get("is_active", True)),
         )
         db.add(srv)
+        consumable_id = body.get("consumable_product_id") or body.get("product_id")
+        if consumable_id:
+            await db.flush()
+            db.add(ServiceConsumable(
+                service_id=srv.id,
+                product_id=consumable_id,
+                quantity_per_service=Decimal(str(body.get("quantity_per_service", "1.00")))
+            ))
         await db.commit()
         await db.refresh(srv)
         return ApiResponse.ok(ServiceDto.model_validate(srv).model_dump())
