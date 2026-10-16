@@ -1,0 +1,26 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/.venv/
+.venv/
+venv/
+*.db
+*.sqlite3
+
+# Android & Gradle
+.gradle/
+build/
+*/build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Environment files with sensitive credentials
+*.env
+!backend/.env.example
