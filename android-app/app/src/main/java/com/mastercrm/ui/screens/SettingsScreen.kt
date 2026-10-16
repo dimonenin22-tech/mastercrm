@@ -293,9 +293,11 @@ fun StudioSettingsTab(
             }
 
             items(masters, key = { it.id }) { master ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                val initials = master.name.take(2).uppercase()
+                ElevatedCard(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -305,10 +307,22 @@ fun StudioSettingsTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(text = master.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(text = "${master.phone} • ${master.specialization ?: "Nail Master"}", color = Color.Gray, fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(21.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(initials, fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(text = master.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(text = "${master.phone} • ${master.specialization ?: "Nail Master"}", color = Color.Gray, fontSize = 12.sp)
+                            }
                         }
+
                         if (master.role != "owner") {
                             IconButton(onClick = {
                                 scope.launch {
@@ -346,40 +360,137 @@ fun StudioSettingsTab(
         }
 
         items(services, key = { it.id }) { service ->
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            var showEditPriceDialog by remember { mutableStateOf(false) }
+
+            ElevatedCard(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = service.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Text(
-                            text = "${service.price.toInt()} грн • ${service.durationMinutes} хв (+${service.bufferMinutes}хв буфер)",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-                    if (isOwner) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                app.database.serviceDao().deleteById(service.id)
-                                app.syncRepository.queueMutation(
-                                    action = "service_delete",
-                                    payload = mapOf("service_id" to service.id)
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = service.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text("Послуга", fontSize = 11.sp) }
+                                )
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text("${service.durationMinutes} хв", fontSize = 11.sp) }
                                 )
                             }
-                        }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Видалити", tint = Color.Gray)
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${service.price.toInt()} ₴",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = RosePrimary
+                                )
+                                IconButton(
+                                    onClick = { showEditPriceDialog = true },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Змінити ціну", modifier = Modifier.size(16.dp), tint = Color.Gray)
+                                }
+                            }
+                            Switch(
+                                checked = service.isActive,
+                                onCheckedChange = { isChecked ->
+                                    scope.launch {
+                                        val updated = service.copy(isActive = isChecked)
+                                        app.database.serviceDao().insertOrUpdate(updated)
+                                        app.syncRepository.queueMutation(
+                                            action = "service_update",
+                                            payload = mapOf(
+                                                "service_id" to service.id,
+                                                "is_active" to isChecked
+                                            )
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                        }
+                    }
+
+                    if (isOwner) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        app.database.serviceDao().deleteById(service.id)
+                                        app.syncRepository.queueMutation(
+                                            action = "service_delete",
+                                            payload = mapOf("service_id" to service.id)
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Видалити", tint = Color.LightGray, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
+            }
+
+            if (showEditPriceDialog) {
+                var newPriceText by remember { mutableStateOf(service.price.toInt().toString()) }
+                AlertDialog(
+                    onDismissRequest = { showEditPriceDialog = false },
+                    title = { Text("Зміна ціни: ${service.title}") },
+                    text = {
+                        OutlinedTextField(
+                            value = newPriceText,
+                            onValueChange = { newPriceText = it },
+                            label = { Text("Нова ціна (₴)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val p = newPriceText.toDoubleOrNull()
+                                if (p != null && p > 0) {
+                                    scope.launch {
+                                        val updated = service.copy(price = p)
+                                        app.database.serviceDao().insertOrUpdate(updated)
+                                        app.syncRepository.queueMutation(
+                                            action = "service_update",
+                                            payload = mapOf("service_id" to service.id, "price" to p)
+                                        )
+                                    }
+                                }
+                                showEditPriceDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                        ) {
+                            Text("Зберегти")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditPriceDialog = false }) { Text("Скасувати") }
+                    }
+                )
             }
         }
 

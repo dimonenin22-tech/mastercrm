@@ -8,9 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -28,8 +27,7 @@ import com.mastercrm.data.local.entity.ClientEntity
 import com.mastercrm.data.local.entity.VisitBriefEntity
 import com.mastercrm.ui.theme.*
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 fun normalizeUkrainianPhone(rawPhone: String): String {
     val digitsOnly = rawPhone.replace(Regex("[^0-9]"), "")
@@ -110,10 +108,9 @@ fun ClientsScreen() {
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(clients, key = { it.id }) { client ->
                         val isVip = client.totalVisits >= 5 || client.totalSpent >= 3000.0
@@ -122,25 +119,7 @@ fun ClientsScreen() {
                             client = client,
                             isVip = isVip,
                             onClick = { selectedClientForDetail = client },
-                            onResetRemoval = {
-                                scope.launch {
-                                    val updated = client.copy(visitsSinceLastRemoval = 0)
-                                    app.database.clientDao().insertOrUpdate(updated)
-                                    app.syncRepository.queueMutation(
-                                        action = "client_reset_removal_counter",
-                                        payload = mapOf("client_id" to client.id)
-                                    )
-                                    Toast.makeText(context, "Лічильник зняття скинуто!", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onToggleBlacklist = {
-                                scope.launch {
-                                    val updated = client.copy(isBlacklisted = !client.isBlacklisted)
-                                    app.database.clientDao().insertOrUpdate(updated)
-                                    val statusMsg = if (updated.isBlacklisted) "Клієнта додано в чорний список" else "Клієнта вилучено з чорного списку"
-                                    Toast.makeText(context, statusMsg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
+                            onOpenBrief = { selectedClientForBrief = client },
                             onWhatsAppClick = {
                                 val now = System.currentTimeMillis()
                                 if (now - lastWhatsAppClickTime > 800) {
@@ -165,9 +144,9 @@ fun ClientsScreen() {
         }
     }
 
-    // Modal Sheet for Client Details & Diagnostic Brief History
+    // Native Material 3 ModalBottomSheet for Client Details & Diagnostic Brief History
     selectedClientForDetail?.let { client ->
-        ClientDetailSheet(
+        ClientDetailBottomSheet(
             client = client,
             onDismiss = { selectedClientForDetail = null },
             onOpenNewBrief = {
@@ -183,6 +162,15 @@ fun ClientsScreen() {
                         payload = mapOf("client_id" to client.id)
                     )
                     Toast.makeText(context, "Лічильник зняття скинуто!", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onToggleBlacklist = {
+                scope.launch {
+                    val updated = client.copy(isBlacklisted = !client.isBlacklisted)
+                    app.database.clientDao().insertOrUpdate(updated)
+                    selectedClientForDetail = updated
+                    val statusMsg = if (updated.isBlacklisted) "Клієнта додано в чорний список" else "Клієнта вилучено з чорного списку"
+                    Toast.makeText(context, statusMsg, Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -206,90 +194,98 @@ fun ClientCard(
     client: ClientEntity,
     isVip: Boolean,
     onClick: () -> Unit,
-    onResetRemoval: () -> Unit,
-    onToggleBlacklist: () -> Unit,
+    onOpenBrief: () -> Unit,
     onWhatsAppClick: () -> Unit
 ) {
-    Card(
+    val initials = remember(client.firstName, client.lastName) {
+        val f = client.firstName.take(1)
+        val l = (client.lastName ?: "").take(1)
+        (f + l).uppercase(Locale.getDefault()).ifBlank { "💅" }
+    }
+
+    ElevatedCard(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Top Row: Avatar + Name + Phone + LTV
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                // Circular Avatar
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .background(RosePrimary.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "${client.firstName} ${client.lastName ?: ""}".trim(),
+                        text = initials,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
+                        color = RosePrimary,
+                        fontSize = 16.sp
                     )
-                    if (isVip) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFFFFD700), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "VIP ⭐",
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
-                    if (client.discountPercent > 0) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "-${client.discountPercent}%",
-                                color = RosePrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "LTV: ${client.totalSpent.toInt()} грн",
-                        fontWeight = FontWeight.SemiBold,
-                        color = RosePrimary,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    IconButton(
-                        onClick = onToggleBlacklist,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (client.isBlacklisted) Icons.Default.Block else Icons.Default.CheckCircle,
-                            contentDescription = "Чорний список",
-                            tint = if (client.isBlacklisted) Color(0xFFD32F2F) else Color.LightGray,
-                            modifier = Modifier.size(16.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${client.firstName} ${client.lastName ?: ""}".trim(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
+                        if (isVip) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "VIP ⭐",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
                     }
+                    Text(
+                        text = client.phone,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                }
+
+                // LTV Badge
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "${client.totalSpent.toInt()} ₴",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RosePrimary
+                    )
+                    Text(
+                        text = "LTV",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
                 }
             }
 
             if (client.isBlacklisted) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
-                        .background(Color(0xFFD32F2F).copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .background(Color(0xFFD32F2F).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
                         text = "⚠️ Чорний список (No-Show: ${client.noShowCount})",
@@ -300,250 +296,297 @@ fun ClientCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "📞 ${client.phone}", color = Color.Gray, fontSize = 13.sp)
+            Spacer(modifier = Modifier.height(10.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Removal counter badge & Reset button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val alertColor = if (client.visitsSinceLastRemoval >= 3) Color(0xFFD32F2F) else Color(0xFF388E3C)
-                    Box(
-                        modifier = Modifier
-                            .background(alertColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "Без зняття: ${client.visitsSinceLastRemoval} візитів",
-                            color = alertColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    if (client.visitsSinceLastRemoval >= 3) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "⚠️ Пора зняти!", color = Color(0xFFD32F2F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                if (client.visitsSinceLastRemoval > 0) {
-                    TextButton(onClick = onResetRemoval, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                        Text("Скинути", fontSize = 11.sp)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Divider(color = DividerColor)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Action row
+            // Bottom Badges & Action Icons Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Візитів: ${client.totalVisits} • Деталі 👉",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
-
-                Button(
-                    onClick = onWhatsAppClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    modifier = Modifier.height(36.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Chat,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = Color.White
+                    SuggestionChip(
+                        onClick = onClick,
+                        label = { Text("Візитів: ${client.totalVisits}", fontSize = 11.sp) }
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("WhatsApp", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+
+                    val isDanger = client.visitsSinceLastRemoval >= 3
+                    val removalColor = if (isDanger) Color(0xFFD32F2F) else Color(0xFF388E3C)
+                    SuggestionChip(
+                        onClick = onClick,
+                        label = {
+                            Text(
+                                text = "Без зняття: ${client.visitsSinceLastRemoval}/3",
+                                fontSize = 11.sp,
+                                color = removalColor,
+                                fontWeight = if (isDanger) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onOpenBrief,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EditNote,
+                            contentDescription = "Бриф",
+                            tint = RosePrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onWhatsAppClick,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "WhatsApp",
+                            tint = Color(0xFF25D366),
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ClientDetailSheet(
+fun ClientDetailBottomSheet(
     client: ClientEntity,
     onDismiss: () -> Unit,
     onOpenNewBrief: () -> Unit,
-    onResetRemoval: () -> Unit
+    onResetRemoval: () -> Unit,
+    onToggleBlacklist: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val app = MasterCrmApp.instance
     val appointments by app.database.appointmentDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val briefs by app.database.visitBriefDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val latestBrief = briefs.firstOrNull()
-    val scrollState = rememberScrollState()
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("${client.firstName} ${client.lastName ?: ""}".trim(), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                if (client.isBlacklisted) {
-                    Text("Чорний список", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Key Metrics Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Card(
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Візитів", color = Color.Gray, fontSize = 11.sp)
-                            Text("${client.totalVisits}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                    }
-                    Card(
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("LTV Загалом", color = Color.Gray, fontSize = 11.sp)
-                            Text("${client.totalSpent.toInt()} грн", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 16.sp)
-                        }
-                    }
-                    Card(
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Знижка", color = Color.Gray, fontSize = 11.sp)
-                            Text("${client.discountPercent}%", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                    }
-                }
-
-                Text("📞 Телефон: ${client.phone}", fontSize = 13.sp)
-
-                // Removal status
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val alertColor = if (client.visitsSinceLastRemoval >= 3) Color(0xFFD32F2F) else Color(0xFF388E3C)
-                    Text("Без повного зняття: ${client.visitsSinceLastRemoval} візитів", color = alertColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    if (client.visitsSinceLastRemoval > 0) {
-                        OutlinedButton(
-                            onClick = onResetRemoval,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text("Скинути", fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                Divider(color = DividerColor)
-
-                // Nail Diagnostic Profile (from latest visit brief)
-                Text("Діагностика нігтів (Останній візит):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-
-                if (latestBrief != null) {
-                    Card(
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("• Покриття: ${latestBrief.coatingCondition ?: "Не вказано"}", fontSize = 12.sp)
-                            Text("• Пластина: ${latestBrief.nailPlateType ?: "Нормальна"}", fontSize = 12.sp)
-                            Text("• Кутикула: ${latestBrief.cuticleType ?: "Нормальна"}", fontSize = 12.sp)
-                            Text("• База/гель: ${latestBrief.baseGelUsed ?: "Rubber Base"}", fontSize = 12.sp)
-                            Text("• Форма/Дизайн: ${latestBrief.designAndLength ?: "Мигдаль"}", fontSize = 12.sp)
-                            if (!latestBrief.healthNotes.isNullOrBlank()) {
-                                Text("• Здоров'я: ${latestBrief.healthNotes}", color = Color(0xFFD32F2F), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            if (!latestBrief.coffeePrefs.isNullOrBlank()) {
-                                Text("• Вподобання: ☕️ ${latestBrief.coffeePrefs}", fontSize = 12.sp)
-                            }
-                        }
-                    }
-                } else {
-                    Text("Діагностику ще не заповнено. Створіть перший бриф візиту.", color = Color.Gray, fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = onOpenNewBrief,
-                    colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
-                    shape = RoundedCornerShape(10.dp),
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Header Profile Card
+            item {
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Заповнити новий бриф візиту")
-                }
-
-                Divider(color = DividerColor)
-
-                // History of Visits
-                Text("Історія записів (${appointments.size}):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                if (appointments.isEmpty()) {
-                    Text("Історія візитів порожня", color = Color.Gray, fontSize = 12.sp)
-                } else {
-                    appointments.take(5).forEach { apt ->
-                        Card(
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            modifier = Modifier.fillMaxWidth()
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("${apt.date} • ${apt.startTime}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text(apt.status, color = if (apt.status == "COMPLETED") StatusCompleted else RosePrimary, fontSize = 11.sp)
+                            Column {
+                                Text(
+                                    text = "${client.firstName} ${client.lastName ?: ""}".trim(),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "📞 ${client.phone}",
+                                    color = Color.Gray,
+                                    fontSize = 13.sp
+                                )
+                            }
+
+                            IconButton(onClick = onToggleBlacklist) {
+                                Icon(
+                                    imageVector = if (client.isBlacklisted) Icons.Default.Block else Icons.Default.CheckCircle,
+                                    contentDescription = "Чорний список",
+                                    tint = if (client.isBlacklisted) Color(0xFFD32F2F) else Color.LightGray
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("LTV: ${client.totalSpent.toInt()} ₴") }
+                            )
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("Візитів: ${client.totalVisits}") }
+                            )
+                            if (client.discountPercent > 0) {
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("Знижка: -${client.discountPercent}%") }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Removal Counter Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val alertColor = if (client.visitsSinceLastRemoval >= 3) Color(0xFFD32F2F) else Color(0xFF388E3C)
+                            Text(
+                                text = "Без повного зняття: ${client.visitsSinceLastRemoval} візитів",
+                                color = alertColor,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            if (client.visitsSinceLastRemoval > 0) {
+                                OutlinedButton(
+                                    onClick = onResetRemoval,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Скинути зняття", fontSize = 11.sp)
                                 }
-                                Text("${apt.totalPrice.toInt()} грн", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)) {
-                Text("Закрити")
+
+            // Nail Diagnostics Card (FlowRow of FilterChips)
+            item {
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Spa, contentDescription = null, tint = RosePrimary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Діагностика нігтьової пластини", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+
+                        if (latestBrief != null) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Покриття: ${latestBrief.coatingCondition ?: "Ідеально"}", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Пластина: ${latestBrief.nailPlateType ?: "Нормальна"}", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Кутикула: ${latestBrief.cuticleType ?: "Нормальна"}", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("База/Гель: ${latestBrief.baseGelUsed ?: "Rubber Base"}", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Форма: ${latestBrief.designAndLength ?: "Мигдаль"}", fontSize = 11.sp) }
+                                )
+                            }
+
+                            if (!latestBrief.healthNotes.isNullOrBlank()) {
+                                Text(
+                                    text = "⚠️ Особливості: ${latestBrief.healthNotes}",
+                                    color = Color(0xFFD32F2F),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            if (!latestBrief.coffeePrefs.isNullOrBlank()) {
+                                Text(
+                                    text = "☕️ Вподобання: ${latestBrief.coffeePrefs}",
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        } else {
+                            Text("Діагностику ще не заповнено.", color = Color.Gray, fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = onOpenNewBrief,
+                            colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Заповнити новий бриф візиту")
+                        }
+                    }
+                }
+            }
+
+            // History of Appointments Section
+            item {
+                Text("Історія візитів (${appointments.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+
+            if (appointments.isEmpty()) {
+                item {
+                    Text("Історія записів порожня.", color = Color.Gray, fontSize = 13.sp)
+                }
+            } else {
+                items(appointments, key = { it.id }) { apt ->
+                    ElevatedCard(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("${apt.date} • ${apt.startTime}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(apt.status, color = if (apt.status == "COMPLETED") StatusCompleted else RosePrimary, fontSize = 11.sp)
+                            }
+                            Text("${apt.totalPrice.toInt()} ₴", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
+                        }
+                    }
+                }
             }
         }
-    )
+    }
 }

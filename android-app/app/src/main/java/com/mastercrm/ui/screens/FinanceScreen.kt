@@ -609,15 +609,15 @@ fun IncomesTab(incomes: List<IncomeEntity>, onAddIncome: () -> Unit) {
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(incomes, key = { it.id }) { inc ->
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    ElevatedCard(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -630,12 +630,12 @@ fun IncomesTab(incomes: List<IncomeEntity>, onAddIncome: () -> Unit) {
                             Column {
                                 Text(
                                     text = if (inc.category == "tips") "Чайові ☕️" else "Послуга 💅",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(text = "${inc.date} • ${inc.paymentMethod}", color = Color.Gray, fontSize = 12.sp)
                             }
-                            Text("+${inc.amount.toInt()} грн", fontWeight = FontWeight.Bold, color = StatusCompleted, fontSize = 16.sp)
+                            Text("+${inc.amount.toInt()} ₴", fontWeight = FontWeight.Bold, color = StatusCompleted, fontSize = 17.sp)
                         }
                     }
                 }
@@ -664,15 +664,15 @@ fun ExpensesTab(expenses: List<ExpenseEntity>, onAddExpense: () -> Unit) {
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(expenses, key = { it.id }) { exp ->
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    ElevatedCard(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -683,14 +683,14 @@ fun ExpensesTab(expenses: List<ExpenseEntity>, onAddExpense: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(text = exp.category, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(text = exp.category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text(
                                     text = "${exp.date} • ${exp.description ?: "Без опису"}",
                                     color = Color.Gray,
                                     fontSize = 12.sp
                                 )
                             }
-                            Text("-${exp.amount.toInt()} грн", fontWeight = FontWeight.Bold, color = StatusCancelled, fontSize = 16.sp)
+                            Text("-${exp.amount.toInt()} ₴", fontWeight = FontWeight.Bold, color = StatusCancelled, fontSize = 17.sp)
                         }
                     }
                 }
@@ -755,17 +755,23 @@ fun InventoryTab(
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(products, key = { it.id }) { prod ->
                     val isLowStock = prod.currentStock <= prod.minStockAlert
+                    val progress = (prod.currentStock / (prod.minStockAlert * 3.0)).toFloat().coerceIn(0f, 1f)
+                    val indicatorColor = when {
+                        prod.currentStock <= prod.minStockAlert -> Color(0xFFD32F2F)
+                        prod.currentStock <= prod.minStockAlert * 1.5 -> Color(0xFFFFA000)
+                        else -> Color(0xFF388E3C)
+                    }
 
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    ElevatedCard(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -774,46 +780,72 @@ fun InventoryTab(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(text = prod.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text(
+                                    text = prod.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 if (isLowStock) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Закінчується!", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFFD32F2F).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("⚠️ Закінчується!", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Visual Stock Progress Indicator
+                            LinearProgressIndicator(
+                                progress = progress,
+                                color = indicatorColor,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
                             Text(
-                                text = "Залишок: ${prod.currentStock} ${prod.unit} (мін. ${prod.minStockAlert}) • Ціна: ${prod.purchasePrice.toInt()} грн/${prod.unit}",
+                                text = "Залишок: ${prod.currentStock} ${prod.unit} (мін. ${prod.minStockAlert}) • Ціна: ${prod.purchasePrice.toInt()} ₴/${prod.unit}",
                                 color = if (isLowStock) Color(0xFFD32F2F) else Color.Gray,
                                 fontSize = 13.sp
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilledTonalButton(
                                     onClick = { onRestock(prod) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("+ Поповнити", fontSize = 11.sp)
+                                    Text("➕ Поповнити", fontSize = 12.sp)
                                 }
-                                OutlinedButton(
+                                FilledTonalButton(
                                     onClick = { onWriteoff(prod) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusCancelled)
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = StatusCancelled.copy(alpha = 0.15f),
+                                        contentColor = StatusCancelled
+                                    ),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("− Списати", fontSize = 11.sp)
+                                    Text("➖ Списати", fontSize = 12.sp)
                                 }
                                 OutlinedButton(
                                     onClick = { onAudit(prod) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Факт", fontSize = 11.sp)
+                                    Text("Факт", fontSize = 12.sp)
                                 }
                             }
                         }
