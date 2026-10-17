@@ -275,6 +275,57 @@ fun StudioSettingsTab(
             }
         }
 
+        // Telegram Bot & Push Notifications Settings Card
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Сповіщення в Telegram майстру", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                "Надсилати картку нового онлайн-запису з кнопками 1-tap підтвердження/відхилення у Telegram",
+                                color = Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        }
+                        var notifyTg by remember { mutableStateOf(true) }
+                        Switch(
+                            checked = notifyTg,
+                            onCheckedChange = { isChecked ->
+                                notifyTg = isChecked
+                                scope.launch {
+                                    app.syncRepository.queueMutation(
+                                        action = "studio_setting_set",
+                                        payload = mapOf(
+                                            "key" to "notify_master_telegram",
+                                            "value" to isChecked.toString()
+                                        )
+                                    )
+                                }
+                            },
+                            modifier = Modifier.scale(0.85f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "💡 Для отримання сповіщень у Telegram майстер повинен хоча б один раз надіслати боту команду /login або /start.",
+                        color = RosePrimary,
+                        fontSize = 11.5.sp
+                    )
+                }
+            }
+        }
+
         // Masters Management (Owner only)
         if (isOwner) {
             item {

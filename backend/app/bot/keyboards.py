@@ -192,3 +192,109 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📸 Instagram", callback_data="adm:set_insta")],
         ]
     )
+
+
+def get_client_main_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💅 Записатися онлайн", callback_data="m:book")],
+            [
+                InlineKeyboardButton(text="📅 Мої записи", callback_data="m:my_apts"),
+                InlineKeyboardButton(text="📋 Прайс", callback_data="m:price"),
+            ],
+            [
+                InlineKeyboardButton(text="👩🎨 Про студію", callback_data="m:about"),
+                InlineKeyboardButton(text="📝 Лист очікування", callback_data="m:waitlist"),
+            ],
+        ]
+    )
+
+
+def get_nav_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💅 Записатися онлайн", callback_data="m:book"),
+                InlineKeyboardButton(text="« Головне меню", callback_data="m:main"),
+            ]
+        ]
+    )
+
+
+def get_booking_summary_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Підтвердити запис", callback_data="bk:confirm")],
+            [InlineKeyboardButton(text="✏️ Змінити мої дані (ім'я / телефон)", callback_data="bk:edit_profile")],
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="booking:cancel")],
+        ]
+    )
+
+
+def get_master_notification_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Підтвердити", callback_data=f"m_apt:confirm:{appointment_id}"),
+                InlineKeyboardButton(text="❌ Відхилити", callback_data=f"m_apt:reject:{appointment_id}"),
+            ]
+        ]
+    )
+
+
+def create_waitlist_calendar(year: int, month: int, today_str: str) -> InlineKeyboardMarkup:
+    month_names_ua = [
+        "", "Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+        "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"
+    ]
+    header = f"{month_names_ua[month]} {year}"
+
+    prev_month = month - 1
+    prev_year = year
+    if prev_month < 1:
+        prev_month = 12
+        prev_year -= 1
+
+    next_month = month + 1
+    next_year = year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    buttons = [
+        [
+            InlineKeyboardButton(text="◀️", callback_data=f"wl_cal:nav:{prev_year}:{prev_month}"),
+            InlineKeyboardButton(text=header, callback_data="wl_cal:ignore"),
+            InlineKeyboardButton(text="▶️", callback_data=f"wl_cal:nav:{next_year}:{next_month}"),
+        ]
+    ]
+
+    dow_row = [
+        InlineKeyboardButton(text=day, callback_data="wl_cal:ignore")
+        for day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"]
+    ]
+    buttons.append(dow_row)
+
+    month_matrix = calendar.monthcalendar(year, month)
+    today_dt = datetime.strptime(today_str, "%Y-%m-%d").date()
+
+    for week in month_matrix:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="wl_cal:ignore"))
+            else:
+                day_date = datetime(year, month, day).date()
+                date_iso = f"{year:04d}-{month:02d}-{day:02d}"
+                if day_date < today_dt:
+                    row.append(InlineKeyboardButton(text=f"▫️{day}", callback_data="wl_cal:blocked"))
+                else:
+                    row.append(InlineKeyboardButton(text=f"{day}", callback_data=f"wl_cal:day:{date_iso}"))
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton(text="💅 Записатися онлайн", callback_data="m:book"),
+        InlineKeyboardButton(text="« Головне меню", callback_data="m:main"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+

@@ -1,24 +1,30 @@
 import html
 import logging
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 import pytz
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart, CommandObject
+from aiogram.filters import Command, CommandStart, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from app.bot.fsm import BookingStates, ReceiptUploadStates, ReviewStates, WaitingListStates
 from app.bot.keyboards import (
     create_inline_calendar,
+    create_waitlist_calendar,
     get_cancel_appointment_keyboard,
     get_categories_keyboard,
     get_client_main_keyboard,
+    get_client_main_inline_keyboard,
     get_contact_request_keyboard,
+    get_nav_back_keyboard,
+    get_booking_summary_keyboard,
+    get_master_notification_keyboard,
     get_master_receipt_approval_keyboard,
     get_review_rating_keyboard,
     get_services_keyboard,
@@ -107,39 +113,78 @@ async def cmd_start(message: Message, state: FSMContext, command: Optional[Comma
         f"Оберіть потрібний пункт у меню нижче:"
     )
     await message.answer(text, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
+    await message.answer("💅 Швидке меню:", reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
 
 
-# 2. Main Menu Actions
-@client_router.message(F.text == "📋 Прайс")
-async def show_price_list(message: Message) -> None:
+# 2. Main Menu Actions & Callbacks
+@client_router.callback_query(F.data == "m:main")
+async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    first_name = html.escape(callback.from_user.first_name if callback.from_user else "Клієнт")
+    text = (
+        f"Привіт, <b>{first_name}</b>! ✨\n\n"
+        f"Ласкаво просимо до <b>{html.escape(settings.PROJECT_NAME)}</b> — системи онлайн-запису та краси.\n"
+        f"Оберіть потрібний пункт у меню нижче:"
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
+
+
+@client_router.callback_query(F.data == "m:book")
+async def cb_book(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await start_booking_flow(callback.message, state, is_callback=True)
+
+
+async def _send_price_list(target_message: Message, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
         res = await db.execute(
             select(ServiceCategory)
             .options(selectinload(ServiceCategory.services))
             .where(ServiceCategory.deleted.is_(False), ServiceCategory.is_active.is_(True))
-            .order_index() if hasattr(ServiceCategory, "order_index") else select(ServiceCategory).options(selectinload(ServiceCategory.services)).where(ServiceCategory.deleted.is_(False), ServiceCategory.is_active.is_(True))
         )
         categories = res.scalars().all()
 
         if not categories:
-            await message.answer("📋 Прайс-лист наразі оновлюється.", parse_mode="HTML")
-            return
+            text = "📋 Прайс-лист наразі оновлюється."
+        else:
+            lines = ["📋 <b>Наш прайс-лист:</b>\n"]
+            for cat in categories:
+                active_services = [s for s in cat.services if not s.deleted and s.is_active]
+                if active_services:
+                    lines.append(f"<b>{html.escape(cat.icon_emoji)} {html.escape(cat.name)}:</b>")
+                    for s in active_services:
+                        lines.append(f"  • {html.escape(s.title)} — <b>{int(s.price)} ₴</b> ({s.duration_minutes} хв)")
+                    lines.append("")
+            text = "\n".join(lines).strip()
 
-        lines = ["<b>📋 Наш прайс-лист:</b>\n"]
-        for cat in categories:
-            lines.append(f"<b>{html.escape(cat.icon_emoji)} {html.escape(cat.name)}:</b>")
-            active_services = [s for s in cat.services if not s.deleted and s.is_active]
-            if not active_services:
-                lines.append("  <i>Послуг поки немає</i>")
-            for s in active_services:
-                lines.append(f"  • {html.escape(s.title)} — <b>{int(s.price)} грн</b> ({s.duration_minutes} хв)")
-            lines.append("")
-
-        await message.answer("\n".join(lines), parse_mode="HTML")
+        if is_edit:
+            try:
+                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
+                return
+            except Exception:
+                pass
+        await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
 
 
-@client_router.message(F.text == "👩🎨 Про майстра / Адреса")
-async def show_about_info(message: Message) -> None:
+@client_router.callback_query(F.data == "m:price")
+async def cb_price(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await _send_price_list(callback.message, is_edit=True)
+
+
+@client_router.message(F.text == "📋 Прайс")
+async def show_price_list(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _send_price_list(message, is_edit=False)
+
+
+async def _send_about_info(target_message: Message, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
         items = {s.key: s.value for s in res.scalars().all()}
@@ -149,23 +194,52 @@ async def show_about_info(message: Message) -> None:
         insta = items.get("instagram", "@master_crm_beauty")
 
         text = (
-            f"<b>👩🎨 Про нашу студію:</b>\n\n"
+            f"👩🎨 <b>Про нашу студію:</b>\n\n"
             f"📍 <b>Адреса:</b> {html.escape(addr)}\n"
             f"📞 <b>Телефон:</b> {html.escape(phone)}\n"
             f"📸 <b>Instagram:</b> {html.escape(insta)}\n\n"
             f"Чекаємо на вас затишно та з турботою про ваші нігтики! 💅☕️"
         )
-        await message.answer(text, parse_mode="HTML")
+        if is_edit:
+            try:
+                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
+                return
+            except Exception:
+                pass
+        await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
 
 
-@client_router.message(F.text == "📅 Мої записи")
-async def show_client_appointments(message: Message) -> None:
-    tg_id = message.from_user.id if message.from_user else 0
+@client_router.callback_query(F.data == "m:about")
+async def cb_about(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await _send_about_info(callback.message, is_edit=True)
+
+
+@client_router.message(F.text == "👩🎨 Про майстра / Адреса")
+async def show_about_info(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _send_about_info(message, is_edit=False)
+
+
+async def _send_client_appointments(target_message: Message, tg_id: int, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
-        c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id, Client.deleted.is_(False)))
-        client = c_res.scalar_one_or_none()
+        c_res = await db.execute(
+            select(Client).where(
+                or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
+                Client.deleted.is_(False)
+            )
+        )
+        client = c_res.scalars().first()
         if not client:
-            await message.answer("У вас ще немає збережених записів.", parse_mode="HTML")
+            text = "У вас ще немає збережених записів. Записатися можна за кнопкою нижче! 💅"
+            if is_edit:
+                try:
+                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
+                    return
+                except Exception:
+                    pass
+            await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
             return
 
         today = get_kyiv_today()
@@ -183,7 +257,14 @@ async def show_client_appointments(message: Message) -> None:
         apts = (await db.execute(stmt)).scalars().all()
 
         if not apts:
-            await message.answer("У вас немає активних майбутніх записів. Записатися можна за кнопкою 💅 <b>Записатися онлайн</b>!", parse_mode="HTML")
+            text = "У вас немає активних майбутніх записів. Записатися можна за кнопкою 💅 <b>Записатися онлайн</b>!"
+            if is_edit:
+                try:
+                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
+                    return
+                except Exception:
+                    pass
+            await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
             return
 
         status_labels = {
@@ -201,10 +282,171 @@ async def show_client_appointments(message: Message) -> None:
                 f"⏰ Час: <b>{html.escape(a.start_time)} - {html.escape(a.end_time)}</b>\n"
                 f"💅 Послуга: <b>{html.escape(s_title)}</b>\n"
                 f"👩🎨 Майстер: <b>{html.escape(m_name)}</b>\n"
-                f"💰 Вартість: <b>{int(a.total_price)} грн</b>\n"
+                f"💰 Вартість: <b>{int(a.total_price)} ₴</b>\n"
                 f"📌 Статус: <b>{st_text}</b>"
             )
-            await message.answer(msg, reply_markup=get_cancel_appointment_keyboard(a.id), parse_mode="HTML")
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Скасувати цей запис", callback_data=f"c_can:{a.id}")],
+                    [
+                        InlineKeyboardButton(text="💅 Записатися ще", callback_data="m:book"),
+                        InlineKeyboardButton(text="« Головне меню", callback_data="m:main"),
+                    ]
+                ]
+            )
+            await target_message.answer(msg, reply_markup=kb, parse_mode="HTML")
+
+
+@client_router.callback_query(F.data == "m:my_apts")
+async def cb_my_apts(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await _send_client_appointments(callback.message, callback.from_user.id if callback.from_user else 0, is_edit=False)
+
+
+@client_router.message(F.text == "📅 Мої записи")
+async def show_client_appointments(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _send_client_appointments(message, message.from_user.id if message.from_user else 0, is_edit=False)
+
+
+# Interactive Waiting List Flow
+async def _send_waitlist_flow(target_message: Message, tg_id: int, is_edit: bool = False) -> None:
+    today_str = get_kyiv_today()
+    parts = today_str.split("-")
+    year, month = int(parts[0]), int(parts[1])
+
+    async with AsyncSessionLocal() as db:
+        c_res = await db.execute(
+            select(Client).where(
+                or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
+                Client.deleted.is_(False)
+            )
+        )
+        client = c_res.scalars().first()
+
+        active_entries = []
+        if client:
+            wl_stmt = (
+                select(WaitingList)
+                .where(
+                    WaitingList.client_id == client.id,
+                    WaitingList.status == "ACTIVE",
+                    WaitingList.deleted.is_(False)
+                )
+                .order_by(WaitingList.preferred_date.asc())
+            )
+            active_entries = (await db.execute(wl_stmt)).scalars().all()
+
+        lines = [
+            "📝 <b>Лист очікування</b>\n",
+            "Оберіть бажану дату в календарі нижче.",
+            "Щойно звільниться віконце на цей день — наш бот негайно надішле вам сповіщення!\n"
+        ]
+        if active_entries:
+            lines.append("📌 <b>Ваші активні заявки в листі очікування:</b>")
+            for e in active_entries:
+                lines.append(f"  • {e.preferred_date}")
+            lines.append("")
+
+        text = "\n".join(lines)
+        cal_kb = create_waitlist_calendar(year, month, today_str)
+
+        if is_edit:
+            try:
+                await target_message.edit_text(text, reply_markup=cal_kb, parse_mode="HTML")
+                return
+            except Exception:
+                pass
+        await target_message.answer(text, reply_markup=cal_kb, parse_mode="HTML")
+
+
+@client_router.callback_query(F.data == "m:waitlist")
+async def cb_waitlist(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await _send_waitlist_flow(callback.message, callback.from_user.id if callback.from_user else 0, is_edit=True)
+
+
+@client_router.message(F.text == "📝 Лист очікування")
+async def msg_waitlist(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _send_waitlist_flow(message, message.from_user.id if message.from_user else 0, is_edit=False)
+
+
+@client_router.callback_query(F.data.startswith("wl_cal:day:"))
+async def cb_waitlist_day(callback: CallbackQuery) -> None:
+    chosen_date = callback.data.split(":")[2]
+    tg_id = callback.from_user.id if callback.from_user else 0
+    first_name = callback.from_user.first_name if callback.from_user else "Клієнт"
+
+    async with AsyncSessionLocal() as db:
+        c_res = await db.execute(
+            select(Client).where(
+                or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
+                Client.deleted.is_(False)
+            )
+        )
+        client = c_res.scalars().first()
+        if not client:
+            client = Client(
+                telegram_id=tg_id,
+                first_name=first_name,
+                phone="",
+            )
+            db.add(client)
+            await db.flush()
+
+        wl = WaitingList(
+            client_id=client.id,
+            master_id="m-01",
+            service_id="",
+            preferred_date=chosen_date,
+            status="ACTIVE"
+        )
+        db.add(wl)
+        await db.commit()
+
+    await callback.answer("✅ Додано в лист очікування!", show_alert=True)
+    await callback.message.edit_text(
+        f"✅ <b>Ви успішно додані до листа очікування на {chosen_date}!</b>\n\n"
+        f"Щойно з'явиться вільне віконце, бот негайно надішле вам персональне повідомлення. 💅",
+        reply_markup=get_nav_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@client_router.callback_query(F.data.startswith("wl_cal:nav:"))
+async def cb_waitlist_nav(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    year, month = int(parts[2]), int(parts[3])
+    today_str = get_kyiv_today()
+    await callback.message.edit_reply_markup(reply_markup=create_waitlist_calendar(year, month, today_str))
+    await callback.answer()
+
+
+@client_router.callback_query(F.data == "wl_cal:blocked")
+async def cb_waitlist_blocked(callback: CallbackQuery) -> None:
+    await callback.answer("Ця дата вже минула. Будь ласка, оберіть сьогодні або майбутній день.", show_alert=True)
+
+
+@client_router.callback_query(F.data == "wl_cal:ignore")
+async def cb_waitlist_ignore(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@client_router.callback_query(F.data.startswith("wl_del:"))
+async def cb_waitlist_del(callback: CallbackQuery) -> None:
+    wl_id = callback.data.split(":")[1]
+    async with AsyncSessionLocal() as db:
+        entry = await db.get(WaitingList, wl_id)
+        if entry:
+            entry.status = "CANCELLED"
+            entry.deleted = True
+            entry.mark_updated()
+            await db.commit()
+    await callback.answer("Запис у листі очікування скасовано.")
+    await _send_waitlist_flow(callback.message, callback.from_user.id if callback.from_user else 0, is_edit=True)
 
 
 # 3. Client Self-Service Cancellation
@@ -460,22 +702,57 @@ async def back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+async def render_booking_summary(target_message: Message, state: FSMContext, is_callback: bool = False) -> None:
+    data = await state.get_data()
+    s_title = data.get("service_title", "Послуга")
+    s_price = data.get("service_price", 0)
+    date_str = data.get("date", "")
+    start_time = data.get("start_time", "")
+    client_name = data.get("client_name", "Клієнт")
+    client_phone = data.get("client_phone", "")
+
+    summary_text = (
+        f"📋 <b>Підтвердження запису:</b>\n\n"
+        f"👤 <b>Ім'я:</b> {html.escape(client_name)}\n"
+        f"📱 <b>Телефон:</b> {html.escape(client_phone)}\n"
+        f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
+        f"📅 <b>Дата:</b> {date_str}\n"
+        f"⏰ <b>Час:</b> {start_time}\n"
+        f"💰 <b>До сплати:</b> {int(s_price)} ₴\n\n"
+        f"Будь ласка, перевірте дані та підтвердіть запис:"
+    )
+    if is_callback:
+        try:
+            await target_message.edit_text(summary_text, reply_markup=get_booking_summary_keyboard(), parse_mode="HTML")
+            return
+        except Exception:
+            pass
+    await target_message.answer(summary_text, reply_markup=get_booking_summary_keyboard(), parse_mode="HTML")
+
+
 @client_router.callback_query(BookingStates.waiting_for_time, F.data.startswith("time:"))
 async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> None:
     slot_choice = callback.data.split(":")[1]
 
     if slot_choice == "waitlist":
-        # Add to waiting list directly
         data = await state.get_data()
         async with AsyncSessionLocal() as db:
-            tg_id = callback.from_user.id
-            c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id))
-            client = c_res.scalar_one_or_none()
+            tg_id = callback.from_user.id if callback.from_user else 0
+            c_res = await db.execute(
+                select(Client).where(
+                    or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
+                    Client.deleted.is_(False)
+                )
+            )
+            client = c_res.scalars().first()
             if not client:
-                await state.set_state(WaitingListStates.waiting_for_phone)
-                await callback.message.answer("Будь ласка, надішліть номер телефону для листа очікування:", reply_markup=get_contact_request_keyboard())
-                await callback.answer()
-                return
+                client = Client(
+                    telegram_id=tg_id,
+                    first_name=callback.from_user.first_name if callback.from_user else "Клієнт",
+                    phone=""
+                )
+                db.add(client)
+                await db.flush()
 
             wl = WaitingList(
                 client_id=client.id,
@@ -488,7 +765,11 @@ async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> N
             await db.commit()
 
         await state.clear()
-        await callback.message.edit_text("✅ <b>Ви в листі очікування!</b> Ми обов'язково надішлемо вам повідомлення, щойно з'явиться віконце на цю дату.", parse_mode="HTML")
+        await callback.message.edit_text(
+            "✅ <b>Ви в листі очікування!</b> Ми обов'язково надішлемо вам повідомлення, щойно з'явиться віконце на цю дату.",
+            reply_markup=get_nav_back_keyboard(),
+            parse_mode="HTML"
+        )
         await callback.answer()
         return
 
@@ -497,19 +778,60 @@ async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> N
     else:
         await state.update_data(start_time=slot_choice)
 
-    await state.set_state(BookingStates.waiting_for_phone)
-    await callback.message.delete()
-    await callback.message.answer(
-        "📱 <b>Крок 5/5: Залиште ваш номер телефону:</b>\n"
-        "Натисніть кнопку внизу або надішліть номер текстом (наприклад, 0991234567):",
-        reply_markup=get_contact_request_keyboard(),
-        parse_mode="HTML"
+    tg_id = callback.from_user.id if callback.from_user else 0
+    async with AsyncSessionLocal() as db:
+        c_stmt = select(Client).where(
+            or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
+            Client.deleted.is_(False)
+        )
+        client = (await db.execute(c_stmt)).scalars().first()
+
+    # SMART RECOGNITION: Returning client with known name and phone
+    if client and client.first_name and client.phone:
+        await state.update_data(
+            client_id=client.id,
+            client_name=client.first_name,
+            client_phone=client.phone
+        )
+        await state.set_state(BookingStates.confirming_booking)
+        await render_booking_summary(callback.message, state, is_callback=True)
+        await callback.answer()
+        return
+
+    # First-time client: ask real name
+    await state.set_state(BookingStates.waiting_for_name)
+    prompt = (
+        "👤 <b>Оскільки ви записуєтесь вперше</b>, напишіть, будь ласка, ваше справжнє <b>Ім'я</b> "
+        "(як до вас звертатися майстру):"
     )
+    try:
+        await callback.message.edit_text(prompt, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(prompt, parse_mode="HTML")
     await callback.answer()
 
 
-@client_router.message(BookingStates.waiting_for_phone, F.contact | F.text)
-async def process_phone_and_finish_booking(message: Message, state: FSMContext) -> None:
+@client_router.message(BookingStates.waiting_for_name, F.text)
+async def process_client_name(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if text in ["❌ Скасувати", "❌ Скасувати запис"]:
+        await state.clear()
+        await message.answer("Запис скасовано.", reply_markup=get_client_main_keyboard(), parse_mode="HTML")
+        return
+
+    client_name = text
+    await state.update_data(client_name=client_name)
+    await state.set_state(BookingStates.waiting_for_contact)
+    await message.answer(
+        f"📱 <b>Дякуємо, {html.escape(client_name)}!</b>\n"
+        f"Надішліть, будь ласка, ваш контактний номер телефону за допомогою кнопки нижче або введіть номер вручну:",
+        reply_markup=get_contact_request_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@client_router.message(StateFilter(BookingStates.waiting_for_contact, BookingStates.waiting_for_phone), F.contact | F.text)
+async def process_phone_and_confirm(message: Message, state: FSMContext) -> None:
     if message.text == "❌ Скасувати запис":
         await state.clear()
         await message.answer("Запис скасовано.", reply_markup=get_client_main_keyboard(), parse_mode="HTML")
@@ -521,39 +843,89 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
     elif message.text:
         phone = message.text.strip()
 
-    if not phone:
+    if not phone or len(phone) < 7:
         await message.answer("Будь ласка, введіть дійсний номер телефону:")
         return
 
     data = await state.get_data()
-    m_id = data.get("master_id")
-    s_id = data.get("service_id")
-    date_str = data.get("date")
-    start_time = data.get("start_time", "10:00")
-    tg_id = message.from_user.id if message.from_user else None
-    first_name = message.from_user.first_name if message.from_user else "Клієнт"
-    last_name = message.from_user.last_name or ""
+    client_name = data.get("client_name", message.from_user.first_name if message.from_user else "Клієнт")
+    tg_id = message.from_user.id if message.from_user else 0
 
     async with AsyncSessionLocal() as db:
-        # Upsert or link Client
-        c_stmt = select(Client).where(or_(Client.telegram_id == tg_id, Client.phone == phone), Client.deleted.is_(False))
-        c_res = await db.execute(c_stmt)
-        client = c_res.scalars().first()
+        c_stmt = select(Client).where(
+            or_(Client.telegram_id == tg_id, Client.phone == phone),
+            Client.deleted.is_(False)
+        )
+        client = (await db.execute(c_stmt)).scalars().first()
         if not client:
             client = Client(
                 telegram_id=tg_id,
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone,
+                first_name=client_name,
+                phone=phone
+            )
+            db.add(client)
+        else:
+            if tg_id:
+                client.telegram_id = tg_id
+            client.first_name = client_name
+            client.phone = phone
+            client.mark_updated()
+        await db.commit()
+        await db.refresh(client)
+
+    await state.update_data(
+        client_id=client.id,
+        client_name=client.first_name,
+        client_phone=client.phone
+    )
+    await state.set_state(BookingStates.confirming_booking)
+    await render_booking_summary(message, state, is_callback=False)
+
+
+@client_router.callback_query(F.data == "bk:edit_profile")
+async def process_edit_profile(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(BookingStates.waiting_for_name)
+    await callback.message.answer(
+        "👤 Напишіть, будь ласка, ваше справжнє <b>Ім'я</b> (як до вас звертатися майстру):",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@client_router.callback_query(BookingStates.confirming_booking, F.data == "bk:confirm")
+async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    data = await state.get_data()
+
+    m_id = data.get("master_id", "m-01")
+    s_id = data.get("service_id")
+    date_str = data.get("date")
+    start_time = data.get("start_time", "10:00")
+    client_name = data.get("client_name", "Клієнт")
+    client_phone = data.get("client_phone", "")
+    client_id = data.get("client_id")
+    tg_id = callback.from_user.id if callback.from_user else 0
+
+    async with AsyncSessionLocal() as db:
+        # Load Client
+        client = None
+        if client_id:
+            client = await db.get(Client, client_id)
+        if not client:
+            c_stmt = select(Client).where(
+                or_(Client.telegram_id == tg_id, Client.phone == client_phone),
+                Client.deleted.is_(False)
+            )
+            client = (await db.execute(c_stmt)).scalars().first()
+
+        if not client:
+            client = Client(
+                telegram_id=tg_id,
+                first_name=client_name,
+                phone=client_phone
             )
             db.add(client)
             await db.flush()
-        else:
-            if not client.telegram_id and tg_id:
-                client.telegram_id = tg_id
-            client.first_name = first_name
-            client.phone = phone
-            client.mark_updated()
 
         srv = await db.get(Service, s_id)
         srv_title = srv.title if srv else "Процедура"
@@ -574,7 +946,6 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         deposit_required = st_map.get("deposit_required", "false").lower() == "true"
         deposit_val = Decimal(st_map.get("deposit_amount", "200.00")) if deposit_required else Decimal("0.00")
 
-        # Blacklisted clients force mandatory deposit
         if client.is_blacklisted:
             deposit_required = True
             if deposit_val <= Decimal("0.00"):
@@ -600,23 +971,53 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         await db.commit()
         await db.refresh(apt)
 
-        # Notify Master
+        # Collect all recipient chat IDs for masters
+        recipients = set()
         master = await db.get(Master, m_id)
+        if master and master.telegram_chat_id:
+            recipients.add(master.telegram_chat_id)
+
+        all_masters = (await db.execute(select(Master).where(Master.is_active.is_(True), Master.deleted.is_(False)))).scalars().all()
+        for m in all_masters:
+            if m.telegram_chat_id:
+                recipients.add(m.telegram_chat_id)
+
+        env_ids = os.getenv("MASTER_CHAT_ID", "").split(",")
+        for eid in env_ids:
+            eid = eid.strip()
+            if eid.lstrip("-").isdigit():
+                recipients.add(int(eid))
+
+        db_chat_id = st_map.get("master_chat_id", "").strip()
+        if db_chat_id.lstrip("-").isdigit():
+            recipients.add(int(db_chat_id))
+
+        # Send Telegram notification to masters with 1-tap confirm/reject
         from app.bot.bot_instance import bot
-        if bot and master and master.telegram_chat_id:
+        if bot:
             m_notice = (
-                f"🔔 <b>Новий запис у системі!</b>\n\n"
+                f"🔔 <b>Новий онлайн-запис!</b>\n\n"
                 f"👤 Клієнт: <b>{html.escape(client.first_name)}</b> ({html.escape(client.phone)})\n"
-                f"📅 Дата: <b>{date_str}</b> | Час: <b>{start_time}</b>\n"
-                f"💅 Послуга: <b>{html.escape(srv_title)}</b> ({int(srv_price)} грн)\n"
-                f"💰 Завдаток: <b>{int(deposit_val)} грн</b>"
+                f"📅 Дата: <b>{date_str}</b>\n"
+                f"⏰ Час: <b>{start_time} - {end_time}</b>\n"
+                f"💅 Послуга: <b>{html.escape(srv_title)}</b>\n"
+                f"💰 Сума: <b>{int(srv_price)} ₴</b>"
             )
+            if deposit_val > Decimal("0.00"):
+                m_notice += f"\n💳 Завдаток: <b>{int(deposit_val)} ₴</b>"
             if client.is_blacklisted:
                 m_notice += "\n⚠️ <i>Клієнт у чорному списку (No-Show).</i>"
-            try:
-                await bot.send_message(chat_id=master.telegram_chat_id, text=m_notice, parse_mode="HTML")
-            except Exception as ex:
-                logger.warning("Could not notify master about new appointment: %s", ex)
+
+            for chat_id in recipients:
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=m_notice,
+                        reply_markup=get_master_notification_keyboard(apt.id),
+                        parse_mode="HTML"
+                    )
+                except Exception as ex:
+                    logger.warning("Could not notify master chat %s: %s", chat_id, ex)
 
     await state.clear()
 
@@ -625,7 +1026,7 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         f"📅 Дата: <b>{date_str}</b>\n"
         f"⏰ Час: <b>{start_time}</b>\n"
         f"💅 Процедура: <b>{html.escape(srv_title)}</b>\n"
-        f"💰 Загальна вартість: <b>{int(srv_price)} грн</b>\n"
+        f"💰 Загальна вартість: <b>{int(srv_price)} ₴</b>\n"
     )
     if discount_p > 0:
         confirmation_msg += f"🎁 <i>Враховано вашу персональну знижку {discount_p}%!</i>\n"
@@ -643,9 +1044,12 @@ async def process_phone_and_finish_booking(message: Message, state: FSMContext) 
         )
         await state.set_state(ReceiptUploadStates.waiting_for_photo)
     else:
-        confirmation_msg += "✅ Запис прийнято! Чекаємо на вас у студії."
+        confirmation_msg += "✅ Запис прийнято! Майстер підтвердить його найближчим часом. Чекаємо на вас у студії."
 
-    await message.answer(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
 
 
 # 5. Receipt Photo Upload Flow

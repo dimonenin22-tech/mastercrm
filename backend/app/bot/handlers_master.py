@@ -2,6 +2,7 @@ import html
 import logging
 import random
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 import pytz
 
 from aiogram import F, Router
@@ -198,12 +199,36 @@ async def cmd_requests(message: Message) -> None:
             await message.answer(card, reply_markup=get_master_requests_keyboard(a.id), parse_mode="HTML")
 
 
-# 4. Master Request Callback (Accept/Reject)
-@master_router.callback_query(F.data.startswith("m_req:"))
+async def ensure_master_linked(db, chat_id: int, username: str = "Майстер") -> Optional[Master]:
+    """If chat_id matches MASTER_CHAT_ID or owner/first master without chat_id, auto-link."""
+    if not chat_id:
+        return None
+    stmt = select(Master).where(Master.telegram_chat_id == chat_id, Master.deleted.is_(False))
+    master = (await db.execute(stmt)).scalar_one_or_none()
+    if master:
+        return master
+
+    env_chat_ids = [cid.strip() for cid in settings.MASTER_CHAT_ID.split(",") if cid.strip()]
+    if str(chat_id) in env_chat_ids or not env_chat_ids:
+        all_masters = (await db.execute(select(Master).where(Master.deleted.is_(False)))).scalars().all()
+        target = next((m for m in all_masters if m.role == "owner" and not m.telegram_chat_id), None)
+        if not target and all_masters:
+            target = next((m for m in all_masters if not m.telegram_chat_id), all_masters[0])
+        if target:
+            target.telegram_chat_id = chat_id
+            target.mark_updated()
+            await db.commit()
+            return target
+    return None
+
+
+# 4. Master Request Callback (Accept/Reject: m_req / m_apt)
+@master_router.callback_query(F.data.startswith("m_req:") | F.data.startswith("m_apt:"))
 async def process_master_request_action(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
-    decision = parts[1]  # "ok" or "no"
+    decision = parts[1]  # "ok", "confirm" or "no", "reject"
     apt_id = parts[2]
+    is_confirm = decision in ["ok", "confirm"]
 
     async with AsyncSessionLocal() as db:
         stmt = (
@@ -216,10 +241,14 @@ async def process_master_request_action(callback: CallbackQuery) -> None:
             await callback.answer("Запис не знайдено.", show_alert=True)
             return
 
+        c_name = apt.client.first_name if apt.client else "Клієнт"
+        c_phone = apt.client.phone if apt.client else ""
+        s_title = apt.service.title if apt.service else "Послуга"
         from app.bot.bot_instance import bot
 
-        if decision == "ok":
+        if is_confirm:
             apt.status = "CONFIRMED"
+            apt.version += 1
             apt.mark_updated()
             await db.commit()
 
@@ -233,14 +262,22 @@ async def process_master_request_action(callback: CallbackQuery) -> None:
                 except Exception as e:
                     logger.warning("Could not notify client: %s", e)
 
-            await callback.message.edit_text(f"✅ <b>Запис {apt.id} успішно підтверджено!</b>", parse_mode="HTML")
+            await callback.message.edit_text(
+                f"✅ <b>Запис підтверджено!</b>\n\n"
+                f"👤 Клієнт: <b>{html.escape(c_name)}</b> ({html.escape(c_phone)})\n"
+                f"📅 Дата: <b>{apt.date}</b> ({apt.start_time})\n"
+                f"💅 Послуга: <b>{html.escape(s_title)}</b>\n"
+                f"💰 Сума: <b>{int(apt.total_price)} грн</b>",
+                parse_mode="HTML"
+            )
+            await callback.answer("✅ Запис підтверджено!")
 
-        elif decision == "no":
+        else:
             apt.status = "CANCELLED_BY_MASTER"
-            apt.cancellation_reason = "Відхилено майстром"
+            apt.cancellation_reason = "Відхилено майстром через Telegram"
+            apt.version += 1
             apt.mark_updated()
             target_date = apt.date
-            s_title = apt.service.title if apt.service else "Послуга"
             await db.commit()
 
             if bot and apt.client and apt.client.telegram_id:
@@ -257,9 +294,15 @@ async def process_master_request_action(callback: CallbackQuery) -> None:
             from app.api.legacy_router import notify_waiting_list_clients
             await notify_waiting_list_clients(db, target_date, s_title)
 
-            await callback.message.edit_text(f"❌ <b>Запис {apt.id} відхилено.</b> Клієнта сповіщено.", parse_mode="HTML")
+            await callback.message.edit_text(
+                f"❌ <b>Запис відхилено!</b>\n\n"
+                f"👤 Клієнт: <b>{html.escape(c_name)}</b>\n"
+                f"📅 Дата: <b>{apt.date}</b> ({apt.start_time})\n"
+                f"💅 Послуга: <b>{html.escape(s_title)}</b>",
+                parse_mode="HTML"
+            )
+            await callback.answer("❌ Запис відхилено.")
 
-    await callback.answer()
 
 
 # 5. Master Receipt Approval (m_pay:ok / m_pay:no)

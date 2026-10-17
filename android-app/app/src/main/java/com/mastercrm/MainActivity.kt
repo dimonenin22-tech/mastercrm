@@ -1,8 +1,14 @@
 package com.mastercrm
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -17,6 +23,7 @@ import com.mastercrm.ui.theme.MasterCRMTheme
 import com.mastercrm.ui.theme.RosePrimary
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -56,11 +63,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Perform background sync on app open if logged in
+                // Request POST_NOTIFICATIONS permission on Android 13+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { }
+                    LaunchedEffect(Unit) {
+                        if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+
+                // Perform background sync periodically every 30s while logged in
                 LaunchedEffect(currentScreen) {
                     if (app.authRepository.isLoggedIn()) {
-                        scope.launch {
+                        while (true) {
                             app.syncRepository.performSync()
+                            delay(30_000L)
                         }
                     }
                 }

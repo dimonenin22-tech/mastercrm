@@ -6,6 +6,8 @@ import com.mastercrm.data.local.AppDatabase
 import com.mastercrm.data.local.entity.*
 import com.mastercrm.data.remote.ApiClient
 import com.mastercrm.data.remote.dto.*
+import com.mastercrm.MasterCrmApp
+import com.mastercrm.ui.notifications.BookingNotificationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -89,6 +91,26 @@ class SyncRepository(
                 if (dto.deleted) {
                     db.appointmentDao().deleteById(dto.id)
                 } else {
+                    val existing = db.appointmentDao().getById(dto.id)
+                    if (existing == null && dto.status == "PENDING" && !dto.deleted) {
+                        val client = data.clients?.find { it.id == dto.clientId } ?: db.clientDao().getById(dto.clientId)
+                        val service = data.services?.find { it.id == dto.serviceId } ?: db.serviceDao().getById(dto.serviceId)
+                        val clientName = client?.firstName ?: "Новий клієнт"
+                        val clientPhone = client?.phone ?: ""
+                        val serviceTitle = service?.title ?: "Послуга"
+
+                        BookingNotificationHelper.showNewBookingNotification(
+                            context = MasterCrmApp.instance,
+                            appointmentId = dto.id,
+                            clientName = clientName,
+                            clientPhone = clientPhone,
+                            serviceTitle = serviceTitle,
+                            date = dto.date,
+                            startTime = dto.startTime,
+                            price = dto.totalPrice
+                        )
+                    }
+
                     db.appointmentDao().insertOrUpdate(
                         AppointmentEntity(
                             id = dto.id,
