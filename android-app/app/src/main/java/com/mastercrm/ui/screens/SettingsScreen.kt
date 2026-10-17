@@ -1,5 +1,6 @@
 package com.mastercrm.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -40,12 +41,13 @@ fun SettingsScreen(
     val isOwner = app.authRepository.getRole() == "owner"
 
     var selectedSettingsTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Студія", "Графік роботи", "Шаблони SMS/Bot")
+    val tabTitles = listOf("Студія", "Майстри", "Графік роботи", "Шаблони SMS/Bot")
 
     val masters by app.database.masterDao().getAllMastersFlow().collectAsState(initial = emptyList())
     val services by app.database.serviceDao().getAllServicesFlow().collectAsState(initial = emptyList())
 
     var showAddMasterDialog by remember { mutableStateOf(false) }
+    var editingMaster by remember { mutableStateOf<MasterEntity?>(null) }
     var showAddServiceDialog by remember { mutableStateOf(false) }
     var showCleanDemoConfirm by remember { mutableStateOf(false) }
 
@@ -86,23 +88,31 @@ fun SettingsScreen(
                     onAddService = { showAddServiceDialog = true },
                     onCleanDemoData = { showCleanDemoConfirm = true }
                 )
-                1 -> ScheduleSettingsTab()
-                2 -> ReminderTemplatesTab()
+                1 -> MastersManagementTab(
+                    masters = masters,
+                    isOwner = isOwner,
+                    onAddMaster = { showAddMasterDialog = true },
+                    onEditMaster = { editingMaster = it }
+                )
+                2 -> ScheduleSettingsTab()
+                3 -> ReminderTemplatesTab()
             }
         }
     }
 
     if (showAddMasterDialog) {
-        AddMasterDialog(
+        AddEditMasterDialog(
+            master = null,
             onDismiss = { showAddMasterDialog = false },
-            onConfirm = { name, phone, spec ->
+            onConfirm = { name, phone, tgId, role, spec ->
                 scope.launch {
                     val id = UUID.randomUUID().toString()
                     val entity = MasterEntity(
                         id = id,
                         name = name,
                         phone = phone,
-                        role = "master",
+                        telegramChatId = tgId,
+                        role = role,
                         specialization = spec,
                         isActive = true,
                         deleted = false,
@@ -112,14 +122,49 @@ fun SettingsScreen(
                     app.database.masterDao().insertOrUpdateAll(listOf(entity))
                     app.syncRepository.queueMutation(
                         action = "master_create",
-                        payload = mapOf(
-                            "name" to name,
-                            "phone" to phone,
-                            "specialization" to spec,
-                            "role" to "master"
-                        )
+                        payload = buildMap {
+                            put("id", id)
+                            put("name", name)
+                            put("phone", phone)
+                            if (tgId != null) put("telegram_chat_id", tgId)
+                            put("specialization", spec)
+                            put("role", role)
+                        }
                     )
                     showAddMasterDialog = false
+                }
+            }
+        )
+    }
+
+    if (editingMaster != null) {
+        AddEditMasterDialog(
+            master = editingMaster,
+            onDismiss = { editingMaster = null },
+            onConfirm = { name, phone, tgId, role, spec ->
+                val current = editingMaster ?: return@AddEditMasterDialog
+                scope.launch {
+                    val updated = current.copy(
+                        name = name,
+                        phone = phone,
+                        telegramChatId = tgId,
+                        role = role,
+                        specialization = spec,
+                        version = current.version + 1
+                    )
+                    app.database.masterDao().insertOrUpdateAll(listOf(updated))
+                    app.syncRepository.queueMutation(
+                        action = "master_update",
+                        payload = buildMap {
+                            put("master_id", current.id)
+                            put("name", name)
+                            put("phone", phone)
+                            put("telegram_chat_id", tgId ?: "")
+                            put("specialization", spec)
+                            put("role", role)
+                        }
+                    )
+                    editingMaster = null
                 }
             }
         )
@@ -959,30 +1004,278 @@ fun ReminderTemplatesTab() {
 }
 
 @Composable
-fun AddMasterDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (name: String, phone: String, spec: String) -> Unit
+fun MastersManagementTab(
+    masters: List<MasterEntity>,
+    isOwner: Boolean,
+    onAddMaster: () -> Unit,
+    onEditMaster: (MasterEntity) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var spec by remember { mutableStateOf("Nail Master") }
+    val app = MasterCrmApp.instance
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val botUsername = "manicurulanails_bot"
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Майстри студії (${masters.size})",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Керування доступом та сповіщеннями в Telegram",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                }
+                if (isOwner) {
+                    Button(
+                        onClick = onAddMaster,
+                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Додати", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        if (masters.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("Майстрів ще не додано", color = Color.Gray)
+                }
+            }
+        } else {
+            items(masters, key = { it.id }) { master ->
+                val initials = master.name.take(2).uppercase()
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Top info row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(22.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(initials, fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = master.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${master.phone} • ${master.specialization ?: "Nail Master"}",
+                                        color = Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            // Role badge
+                            Surface(
+                                color = if (master.role == "owner") RosePrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = if (master.role == "owner") "👑 Власник" else "👩‍🎨 Майстер",
+                                    color = if (master.role == "owner") RosePrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Telegram Status Badge
+                        if (master.telegramChatId != null) {
+                            Surface(
+                                color = Color(0xFFE8F5E9),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "✅ Telegram ID: ${master.telegramChatId}",
+                                        color = Color(0xFF2E7D32),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFFFFF3E0),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⚠️ Telegram не прив'язано (немає сповіщень)",
+                                        color = Color(0xFFE65100),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        // Action Buttons Row
+                        if (isOwner) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = { onEditMaster(master) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("ID / Дані", fontSize = 11.5.sp, maxLines = 1, softWrap = false)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val inviteUrl = "https://t.me/$botUsername?start=join_${master.id}"
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                "Привіт, ${master.name}! 👋\n" +
+                                                "Приєднайся до нашої студії в Telegram для автоматичного отримання сповіщень про нові записи та входу в додаток JuNailCRM:\n" +
+                                                inviteUrl
+                                            )
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Запросити майстра в Telegram"))
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF229ED9)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Запросити в ТГ", fontSize = 11.5.sp, maxLines = 1, softWrap = false)
+                                }
+
+                                val ownerCount = masters.count { it.role == "owner" && !it.deleted }
+                                val canDelete = master.role != "owner" || ownerCount > 1
+
+                                IconButton(
+                                    onClick = {
+                                        if (!canDelete) {
+                                            Toast.makeText(context, "Неможливо видалити єдиного власника студії!", Toast.LENGTH_LONG).show()
+                                            return@IconButton
+                                        }
+                                        scope.launch {
+                                            app.database.masterDao().deleteById(master.id)
+                                            app.syncRepository.queueMutation(
+                                                action = "master_delete",
+                                                payload = mapOf("master_id" to master.id)
+                                            )
+                                            Toast.makeText(context, "Майстра видалено", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Видалити",
+                                        tint = if (canDelete) StatusCancelled else Color.LightGray,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddEditMasterDialog(
+    master: MasterEntity? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, phone: String, tgId: Long?, role: String, spec: String) -> Unit
+) {
+    val isEdit = master != null
+    var name by remember { mutableStateOf(master?.name ?: "") }
+    var phone by remember { mutableStateOf(master?.phone ?: "+380") }
+    var tgIdText by remember { mutableStateOf(master?.telegramChatId?.toString() ?: "") }
+    var role by remember { mutableStateOf(master?.role ?: "master") }
+    var spec by remember { mutableStateOf(master?.specialization ?: "Nail Master") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Новий майстер") },
+        title = { Text(if (isEdit) "Редагування майстра" else "Новий майстер", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Ім'я майстра") },
+                    label = { Text("Ім'я майстра *") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
-                    label = { Text("Телефон (+380...)") },
+                    label = { Text("Телефон (+380...) *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = tgIdText,
+                    onValueChange = { tgIdText = it.filter { c -> c.isDigit() } },
+                    label = { Text("Telegram ID (числа)") },
+                    placeholder = { Text("напр. 683419385") },
+                    supportingText = {
+                        Text("💡 Майстер може дізнатись свій ID у боті командою /myid або прив'язатись через посилання", fontSize = 11.sp)
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -993,14 +1286,32 @@ fun AddMasterDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Роль власника студії:", fontSize = 13.sp)
+                    Switch(
+                        checked = role == "owner",
+                        onCheckedChange = { isOwnerChecked ->
+                            role = if (isOwnerChecked) "owner" else "master"
+                        }
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank() && phone.isNotBlank()) onConfirm(name, phone, spec) },
+                onClick = {
+                    if (name.isNotBlank() && phone.isNotBlank()) {
+                        val parsedTg = tgIdText.toLongOrNull()
+                        onConfirm(name.trim(), phone.trim(), parsedTg, role, spec.trim())
+                    }
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
             ) {
-                Text("Створити")
+                Text(if (isEdit) "Зберегти" else "Створити")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }

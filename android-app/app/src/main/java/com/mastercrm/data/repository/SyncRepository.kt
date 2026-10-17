@@ -198,6 +198,7 @@ class SyncRepository(
                                 id = dto.id,
                                 name = dto.name,
                                 phone = dto.phone,
+                                telegramChatId = dto.telegramChatId,
                                 role = dto.role,
                                 specialization = dto.specialization,
                                 isActive = dto.isActive,

@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -75,7 +76,7 @@ class Master(Base, BaseMixin):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(64), nullable=False)
-    telegram_chat_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
     role: Mapped[str] = mapped_column(String(32), default="master", nullable=False)  # "owner" or "master"
     specialization: Mapped[Optional[str]] = mapped_column(String(255), default="Nail Master")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -89,7 +90,7 @@ class Master(Base, BaseMixin):
 class Client(Base, BaseMixin):
     __tablename__ = "clients"
 
-    telegram_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, default="")
     phone: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -279,7 +280,7 @@ class NotificationLog(Base, BaseMixin):
     __tablename__ = "notification_logs"
 
     appointment_id: Mapped[str] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=False)
-    recipient_tg_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    recipient_tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reminder_type: Mapped[str] = mapped_column(String(64), nullable=False)  # 24h, 2h, 10min_review, 2weeks_review, deposit_timeout
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="SUCCESS", nullable=False)  # SUCCESS, FAILED

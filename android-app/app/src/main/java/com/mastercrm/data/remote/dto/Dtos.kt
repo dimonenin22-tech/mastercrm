@@ -33,6 +33,7 @@ data class MasterDto(
     @SerializedName("id") val id: String,
     @SerializedName("name") val name: String,
     @SerializedName("phone") val phone: String,
+    @SerializedName("telegram_chat_id") val telegramChatId: Long? = null,
     @SerializedName("role") val role: String,
     @SerializedName("specialization") val specialization: String?,
     @SerializedName("is_active") val isActive: Boolean,

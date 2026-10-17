@@ -8,6 +8,7 @@ data class MasterEntity(
     @PrimaryKey val id: String,
     val name: String,
     val phone: String,
+    val telegramChatId: Long? = null,
     val role: String,
     val specialization: String?,
     val isActive: Boolean,

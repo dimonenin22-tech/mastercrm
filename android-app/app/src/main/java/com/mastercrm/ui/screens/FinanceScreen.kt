@@ -827,9 +827,10 @@ fun InventoryTab(
                                 FilledTonalButton(
                                     onClick = { onRestock(prod) },
                                     shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("➕ Поповнити", fontSize = 12.sp)
+                                    Text("➕ Поповнити", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
                                 FilledTonalButton(
                                     onClick = { onWriteoff(prod) },
@@ -838,15 +839,18 @@ fun InventoryTab(
                                         containerColor = StatusCancelled.copy(alpha = 0.15f),
                                         contentColor = StatusCancelled
                                     ),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("➖ Списати", fontSize = 12.sp)
+                                    Text("➖ Списати", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
                                 OutlinedButton(
                                     onClick = { onAudit(prod) },
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                                    modifier = Modifier.weight(0.7f)
                                 ) {
-                                    Text("Факт", fontSize = 12.sp)
+                                    Text("Факт", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
                             }
                         }
@@ -1098,7 +1102,7 @@ fun InventoryAuditDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ServiceConsumablesBOMDialog(
     services: List<ServiceEntity>,
@@ -1136,41 +1140,57 @@ fun ServiceConsumablesBOMDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Норми витрат по послугах (BOM)") },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Норми витрат по послугах", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Закрити", modifier = Modifier.size(20.dp))
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 480.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Оберіть послугу:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
 
-                // Service selector tabs / chips
-                Row(
+                // Service selector with FlowRow so all services fit naturally
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    services.take(4).forEach { srv ->
+                    services.forEach { srv ->
                         FilterChip(
                             selected = selectedService?.id == srv.id,
                             onClick = { selectedService = srv },
-                            label = { Text(srv.title.take(15), fontSize = 11.sp) }
+                            label = { Text(srv.title, fontSize = 11.5.sp) }
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Матеріали для процедури:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    TextButton(onClick = { showAddConsumableSheet = true }) {
+                    Text("Матеріали для процедури:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = { showAddConsumableSheet = true },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Додати", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Додати", fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
 
@@ -1186,7 +1206,7 @@ fun ServiceConsumablesBOMDialog(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f, fill = false),
+                            .heightIn(max = 240.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(consumables) { item ->
@@ -1240,8 +1260,13 @@ fun ServiceConsumablesBOMDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)) {
-                Text("Готово")
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Готово", fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -1252,16 +1277,20 @@ fun ServiceConsumablesBOMDialog(
 
         AlertDialog(
             onDismissRequest = { showAddConsumableSheet = false },
-            title = { Text("Прив'язати матеріал") },
+            title = { Text("Прив'язати матеріал", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Матеріал зі складу:")
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        products.take(3).forEach { prod ->
+                    Text("Матеріал зі складу:", fontSize = 13.sp)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        products.forEach { prod ->
                             FilterChip(
                                 selected = selectedProduct?.id == prod.id,
                                 onClick = { selectedProduct = prod },
-                                label = { Text(prod.name.take(12), fontSize = 11.sp) }
+                                label = { Text(prod.name, fontSize = 11.sp) }
                             )
                         }
                     }

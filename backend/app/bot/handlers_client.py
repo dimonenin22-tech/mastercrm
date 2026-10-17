@@ -1,7 +1,9 @@
 import html
 import logging
 import os
-from datetime import datetime, timezone
+import random
+import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 import pytz
@@ -35,6 +37,7 @@ from app.database import AsyncSessionLocal
 from app.models import (
     Appointment,
     Client,
+    Device,
     Master,
     Product,
     Review,
@@ -82,6 +85,47 @@ def calculate_end_time(start_str: str, duration_minutes: int) -> str:
 async def cmd_start(message: Message, state: FSMContext, command: Optional[CommandObject] = None) -> None:
     await state.clear()
 
+    # Deep-link support: /start join_<master_id>
+    if command and command.args and command.args.startswith("join_"):
+        master_id = command.args.replace("join_", "").strip()
+        chat_id = message.chat.id
+        async with AsyncSessionLocal() as db:
+            master = await db.get(Master, master_id)
+            if not master or master.deleted:
+                inv_res = await db.execute(select(StudioSetting).where(StudioSetting.key == f"invite_{master_id}"))
+                inv_set = inv_res.scalar_one_or_none()
+                if inv_set:
+                    master = await db.get(Master, inv_set.value)
+
+            if master and not master.deleted:
+                master.telegram_chat_id = chat_id
+                master.is_active = True
+                master.mark_updated()
+
+                otp_code = f"{random.randint(100000, 999999)}"
+                device = Device(
+                    master_id=master.id,
+                    device_token=f"pending_{uuid.uuid4().hex}",
+                    device_name=f"Android ({master.name})",
+                    otp_code=otp_code,
+                    otp_expires_at=utc_now() + timedelta(days=7),
+                    is_active=False
+                )
+                db.add(device)
+                await db.commit()
+
+                text = (
+                    f"🎉 Вітаємо, <b>{html.escape(master.name)}</b>! Ваш Telegram-акаунт (ID: <code>{chat_id}</code>) успішно прив'язано до студії!\n\n"
+                    f"🔔 Тепер ви будете отримувати сюди сповіщення про всі нові записи.\n\n"
+                    f"🔐 Ваш код для входу в додаток <b>JuNailCRM</b>: <code>{otp_code}</code>\n"
+                    f"Введіть цей 6-значний код на екрані авторизації в додатку."
+                )
+                await message.answer(text, parse_mode="HTML")
+                return
+            else:
+                await message.answer("⚠️ Запрошення недійсне або майстра не знайдено.")
+                return
+
     # Deep-link support: /start srv_<service_id>
     if command and command.args and command.args.startswith("srv_"):
         srv_id = command.args.replace("srv_", "").strip()
@@ -114,6 +158,16 @@ async def cmd_start(message: Message, state: FSMContext, command: Optional[Comma
     )
     await message.answer(text, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
     await message.answer("💅 Швидке меню:", reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
+
+
+@client_router.message(Command("myid", "id"))
+async def cmd_myid(message: Message) -> None:
+    chat_id = message.chat.id
+    text = (
+        f"🆔 Ваш Telegram ID: <code>{chat_id}</code>\n\n"
+        "Натисніть на цифри, щоб скопіювати та вставити в налаштування додатку JuNailCRM."
+    )
+    await message.answer(text, parse_mode="HTML")
 
 
 # 2. Main Menu Actions & Callbacks

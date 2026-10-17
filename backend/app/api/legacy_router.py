@@ -1319,14 +1319,34 @@ async def unified_exec(
     if action == "master_create":
         if current_master.role != "owner":
             return ApiResponse.fail("FORBIDDEN", "Лише власник може створювати майстрів")
+
+        raw_tg = body.get("telegram_chat_id")
+        clean_tg = None
+        if raw_tg:
+            try:
+                clean_tg = int(str(raw_tg).replace("@", "").strip())
+            except (ValueError, TypeError):
+                clean_tg = None
+
+        m_id = body.get("id") or f"mst-{uuid.uuid4().hex[:6]}"
         m = Master(
+            id=m_id,
             name=body.get("name", "Майстер"),
             phone=body.get("phone", "+380000000000"),
+            telegram_chat_id=clean_tg,
             role=body.get("role", "master"),
             specialization=body.get("specialization", "Nail Master"),
             is_active=True
         )
         db.add(m)
+
+        invite_setting = StudioSetting(
+            key=f"invite_{m.id}",
+            value=m.id,
+            description=f"Invite token for master {m.name}"
+        )
+        db.add(invite_setting)
+
         await db.commit()
         await db.refresh(m)
         return ApiResponse.ok(MasterDto.model_validate(m).model_dump())
@@ -1342,6 +1362,15 @@ async def unified_exec(
             m.name = body["name"]
         if "phone" in body:
             m.phone = body["phone"]
+        if "telegram_chat_id" in body:
+            raw_tg = body["telegram_chat_id"]
+            if raw_tg is None or raw_tg == "":
+                m.telegram_chat_id = None
+            else:
+                try:
+                    m.telegram_chat_id = int(str(raw_tg).replace("@", "").strip())
+                except (ValueError, TypeError):
+                    pass
         if "role" in body:
             m.role = body["role"]
         if "specialization" in body:
@@ -1350,6 +1379,7 @@ async def unified_exec(
             m.is_active = bool(body["is_active"])
         m.mark_updated()
         await db.commit()
+        await db.refresh(m)
         return ApiResponse.ok(MasterDto.model_validate(m).model_dump())
 
     if action == "master_delete":
