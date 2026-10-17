@@ -13,8 +13,8 @@ import com.mastercrm.MainActivity
 object BookingNotificationHelper {
 
     const val CHANNEL_ID = "mastercrm_bookings"
-    const val CHANNEL_NAME = "Записи клієнтів"
-    const val CHANNEL_DESC = "Сповіщення про нові онлайн-записи через Telegram-бота"
+    const val CHANNEL_NAME = "Записи клієнтів (JuNailsCRM)"
+    const val CHANNEL_DESC = "Сповіщення про нові онлайн-записи через JuNails-бота"
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
