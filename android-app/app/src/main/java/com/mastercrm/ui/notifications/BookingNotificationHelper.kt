@@ -55,7 +55,7 @@ object BookingNotificationHelper {
         val message = "$serviceTitle • $date о $startTime (${price.toInt()} ₴)"
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.sym_def_app_icon)
+            .setSmallIcon(com.mastercrm.R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(
