@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">JuNailsCRM</string>
+    <string name="app_name">JuNailCRM</string>
     <string name="nav_calendar">Календар</string>
     <string name="nav_clients">Клієнти</string>
     <string name="nav_finance">Фінанси</string>

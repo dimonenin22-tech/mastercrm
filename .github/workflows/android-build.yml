@@ -1,4 +1,4 @@
-name: Build MasterCRM Android APK
+name: Build JuNailCRM Android APK
 
 on:
   push:
@@ -25,22 +25,27 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Debug APK
+      - name: Build Release APK
         working-directory: ./android-app
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleRelease --stacktrace
+
+      - name: Prepare JuNailCRM APK
+        run: |
+          find android-app/app/build/outputs/apk/release/ -name "*.apk" -exec cp {} JuNailCRM.apk \;
+          ls -la JuNailCRM.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MasterCRM-v2.0-Debug
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: JuNailCRM
+          path: JuNailCRM.apk
 
       - name: Publish GitHub Release with APK
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
           tag_name: v2.0.0
-          name: MasterCRM v2.0 Production Release
-          files: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: JuNailCRM Release v2.0
+          files: JuNailCRM.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
