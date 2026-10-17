@@ -93,11 +93,15 @@ class SyncRepository(
                 } else {
                     val existing = db.appointmentDao().getById(dto.id)
                     if (existing == null && dto.status == "PENDING" && !dto.deleted) {
-                        val client = data.clients?.find { it.id == dto.clientId } ?: db.clientDao().getById(dto.clientId)
-                        val service = data.services?.find { it.id == dto.serviceId } ?: db.serviceDao().getById(dto.serviceId)
-                        val clientName = client?.firstName ?: "Новий клієнт"
-                        val clientPhone = client?.phone ?: ""
-                        val serviceTitle = service?.title ?: "Послуга"
+                        val clientName = data.clients?.find { it.id == dto.clientId }?.firstName
+                            ?: db.clientDao().getById(dto.clientId)?.firstName
+                            ?: "Новий клієнт"
+                        val clientPhone = data.clients?.find { it.id == dto.clientId }?.phone
+                            ?: db.clientDao().getById(dto.clientId)?.phone
+                            ?: ""
+                        val serviceTitle = data.services?.find { it.id == dto.serviceId }?.title
+                            ?: db.serviceDao().getById(dto.serviceId)?.title
+                            ?: "Послуга"
 
                         BookingNotificationHelper.showNewBookingNotification(
                             context = MasterCrmApp.instance,
