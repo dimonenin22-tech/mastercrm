@@ -26,6 +26,9 @@ interface AppointmentDao {
     @Query("SELECT * FROM appointments WHERE deleted = 0 ORDER BY date DESC, startTime ASC")
     fun getAllAppointmentsFlow(): Flow<List<AppointmentEntity>>
 
+    @Query("SELECT * FROM appointments WHERE deleted = 0 ORDER BY date ASC, startTime ASC")
+    fun getAllActiveAppointmentsFlow(): Flow<List<AppointmentEntity>>
+
     @Query("SELECT * FROM appointments WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AppointmentEntity?
 

@@ -1021,6 +1021,7 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
         card_details = st_map.get("card_details", "5375 4141 1234 5678 (Анастасія)")
         jar_link = st_map.get("jar_link", "https://send.monobank.ua/jar/123456")
 
+        now_utc = utc_now()
         apt = Appointment(
             master_id=m_id,
             client_id=client.id,
@@ -1032,7 +1033,9 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
             total_price=srv_price,
             deposit_amount=deposit_val,
             is_deposit_paid=False,
-            cancellation_reason=""
+            cancellation_reason="",
+            created_at=now_utc,
+            updated_at=now_utc
         )
         db.add(apt)
         await db.commit()

@@ -36,8 +36,8 @@ class MasterDto(BaseModel):
     role: str
     specialization: Optional[str] = None
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -59,8 +59,8 @@ class ClientDto(BaseModel):
     no_show_count: int = 0
     is_blacklisted: bool = False
     discount_percent: int = 0
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -75,8 +75,8 @@ class ServiceDto(BaseModel):
     duration_minutes: int
     buffer_minutes: int
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -88,18 +88,21 @@ class AppointmentDto(BaseModel):
     master_id: str
     client_id: str
     service_id: str
+    client_name: Optional[str] = "Клієнт"
+    client_phone: Optional[str] = ""
+    service_title: Optional[str] = "Послуга"
     date: str
     start_time: str
     end_time: str
     status: str
     total_price: Decimal
-    deposit_amount: Decimal
-    is_deposit_paid: bool
+    deposit_amount: Decimal = Decimal("0.00")
+    is_deposit_paid: bool = False
     cancellation_reason: Optional[str] = ""
-    created_at: datetime
-    updated_at: datetime
-    deleted: bool
-    version: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    deleted: bool = False
+    version: int = 1
 
 
 class IncomeDto(BaseModel):
@@ -113,8 +116,8 @@ class IncomeDto(BaseModel):
     payment_method: str
     date: str
     category: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -129,8 +132,8 @@ class ExpenseDto(BaseModel):
     payment_method: str
     date: str
     description: Optional[str] = ""
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -144,8 +147,8 @@ class ProductDto(BaseModel):
     current_stock: Decimal
     min_stock_alert: Decimal
     purchase_price: Decimal
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -165,8 +168,8 @@ class ReviewDto(BaseModel):
     review_type: str = "POST_VISIT"
     moderation_status: str = "APPROVED"
     is_published: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 
@@ -234,8 +237,8 @@ class VisitBriefDto(BaseModel):
     health_notes: Optional[str] = ""
     photo_before_url: Optional[str] = ""
     photo_after_url: Optional[str] = ""
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     deleted: bool
     version: int
 

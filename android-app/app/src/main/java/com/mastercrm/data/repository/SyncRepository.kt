@@ -69,22 +69,31 @@ class SyncRepository(
         successCount
     }
 
-    suspend fun performSync(): Result<SyncResponseDto> = withContext(Dispatchers.IO) {
+    suspend fun performSync(forceFullSync: Boolean = false): Result<SyncResponseDto> = withContext(Dispatchers.IO) {
         try {
             // 1. First flush outbox mutations
             flushOutboxQueue()
 
-            // 2. Fetch delta changes from server
-            val since = authRepository.getLastSyncTime() ?: ""
+            // 2. Fetch delta changes from server (or full sync if requested)
+            val since = if (forceFullSync) "1970-01-01T00:00:00.000Z" else (authRepository.getLastSyncTime() ?: "")
             val api = apiClient.getApiService()
-            val response = api.sync(if (since.isNotEmpty()) mapOf("since" to since) else emptyMap())
+            val syncParams = mutableMapOf<String, String>()
+            if (since.isNotEmpty()) {
+                syncParams["since"] = since
+            }
+            if (forceFullSync) {
+                syncParams["force_full"] = "true"
+            }
+            val response = api.sync(syncParams)
 
             if (!response.success || response.data == null) {
                 val err = response.error?.message ?: "Помилка отримання даних від сервера"
+                _syncEvents.emit("Помилка синхронізації: $err")
                 return@withContext Result.failure(Exception(err))
             }
 
             val data = response.data
+            android.util.Log.d("SyncRepo", "Synced ${data.appointments?.size ?: 0} appointments (forceFullSync=$forceFullSync)")
 
             // 3. Process Appointments Delta & Tombstones
             data.appointments?.forEach { dto ->
@@ -93,14 +102,17 @@ class SyncRepository(
                 } else {
                     val existing = db.appointmentDao().getById(dto.id)
                     if (existing == null && dto.status == "PENDING" && !dto.deleted) {
-                        val clientName = data.clients?.find { it.id == dto.clientId }?.firstName
-                            ?: db.clientDao().getById(dto.clientId)?.firstName
+                        val clientName = if (!dto.clientName.isNullOrBlank()) dto.clientName
+                            else data.clients?.find { it.id == dto.clientId }?.firstName
+                            ?: db.clientDao().getById(dto.clientId ?: "")?.firstName
                             ?: "Новий клієнт"
-                        val clientPhone = data.clients?.find { it.id == dto.clientId }?.phone
-                            ?: db.clientDao().getById(dto.clientId)?.phone
+                        val clientPhone = if (!dto.clientPhone.isNullOrBlank()) dto.clientPhone
+                            else data.clients?.find { it.id == dto.clientId }?.phone
+                            ?: db.clientDao().getById(dto.clientId ?: "")?.phone
                             ?: ""
-                        val serviceTitle = data.services?.find { it.id == dto.serviceId }?.title
-                            ?: db.serviceDao().getById(dto.serviceId)?.title
+                        val serviceTitle = if (!dto.serviceTitle.isNullOrBlank()) dto.serviceTitle
+                            else data.services?.find { it.id == dto.serviceId }?.title
+                            ?: db.serviceDao().getById(dto.serviceId ?: "")?.title
                             ?: "Послуга"
 
                         BookingNotificationHelper.showNewBookingNotification(
@@ -118,20 +130,20 @@ class SyncRepository(
                     db.appointmentDao().insertOrUpdate(
                         AppointmentEntity(
                             id = dto.id,
-                            masterId = dto.masterId,
-                            clientId = dto.clientId,
-                            serviceId = dto.serviceId,
+                            masterId = dto.masterId ?: "m-01",
+                            clientId = dto.clientId ?: "",
+                            serviceId = dto.serviceId ?: "",
                             date = dto.date,
                             startTime = dto.startTime,
                             endTime = dto.endTime,
-                            status = dto.status,
+                            status = dto.status ?: "PENDING",
                             totalPrice = dto.totalPrice,
                             depositAmount = dto.depositAmount,
                             isDepositPaid = dto.isDepositPaid,
-                            cancellationReason = dto.cancellationReason,
+                            cancellationReason = dto.cancellationReason ?: "",
                             deleted = dto.deleted,
                             version = dto.version,
-                            updatedAt = dto.updatedAt
+                            updatedAt = dto.updatedAt ?: ""
                         )
                     )
                 }
@@ -352,6 +364,9 @@ class SyncRepository(
 
             // Save server sync time checkpoint
             authRepository.saveLastSyncTime(data.serverSyncTime)
+            if (forceFullSync) {
+                _syncEvents.emit("Синхронізовано записів: ${data.appointments?.size ?: 0}")
+            }
             Result.success(data)
 
         } catch (e: Exception) {

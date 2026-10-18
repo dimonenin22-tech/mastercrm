@@ -322,14 +322,6 @@ async def unified_exec(
     db: AsyncSession = Depends(get_db),
     current_master: Optional[Master] = Depends(get_current_master),
 ) -> Any:
-    # Handle direct browser visits to /exec without action parameter
-    if not action:
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept:
-            from fastapi.responses import HTMLResponse
-            return HTMLResponse(content=await render_public_landing_page())
-        return ApiResponse.ok({"server": "MasterCRM v2.0", "status": "online", "docs": "/docs"})
-
     # 1. Parse request body if available
     body: dict[str, Any] = {}
     if request.method == "POST":
@@ -341,6 +333,17 @@ async def unified_exec(
             body = {}
     else:
         body = dict(request.query_params)
+
+    if not action and isinstance(body, dict):
+        action = body.get("action")
+
+    # Handle direct browser visits to /exec without action parameter
+    if not action:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content=await render_public_landing_page())
+        return ApiResponse.ok({"server": "MasterCRM v2.0", "status": "online", "docs": "/docs"})
 
     # 2. Dispatch actions
     # Public actions: ping, auth_exchange_code
@@ -585,20 +588,34 @@ async def unified_exec(
     # 3. Action: sync
     if action == "sync":
         since_str = body.get("since")
-        since_dt: Optional[datetime] = None
-        if since_str:
+        force_full = (
+            str(body.get("force_full", "")).lower() in ("true", "1")
+            or not since_str
+            or str(since_str).strip() in ("", "0")
+            or str(since_str).startswith("1970")
+        )
+        safe_since_dt: Optional[datetime] = None
+        if not force_full and since_str:
             try:
                 clean_str = since_str.replace("Z", "+00:00")
                 since_dt = datetime.fromisoformat(clean_str)
                 if since_dt.tzinfo is None:
                     since_dt = since_dt.replace(tzinfo=timezone.utc)
+                # 10-minute safety overlap buffer against clock skew and commit lag
+                safe_since_dt = since_dt - timedelta(minutes=10)
             except Exception:
-                since_dt = None
+                safe_since_dt = None
 
         async def fetch_table(model: Any) -> list[Any]:
             query = select(model)
-            if since_dt:
-                query = query.where(model.updated_at >= since_dt)
+            if safe_since_dt:
+                query = query.where(
+                    or_(
+                        model.updated_at >= safe_since_dt,
+                        model.created_at >= safe_since_dt,
+                        model.updated_at.is_(None)
+                    )
+                )
             res = await db.execute(query)
             return list(res.scalars().all())
 
@@ -618,21 +635,76 @@ async def unified_exec(
         all_settings = settings_res.scalars().all()
         settings_map = {s.key: s.value for s in all_settings}
 
-        data = SyncResponseData(
-            appointments=[AppointmentDto.model_validate(a) for a in appointments],
-            clients=[ClientDto.model_validate(c) for c in clients],
-            services=[ServiceDto.model_validate(s) for s in services],
-            masters=[MasterDto.model_validate(m) for m in masters],
-            incomes=[IncomeDto.model_validate(i) for i in incomes],
-            expenses=[ExpenseDto.model_validate(e) for e in expenses],
-            products=[ProductDto.model_validate(p) for p in products],
-            reviews=[ReviewDto.model_validate(r) for r in reviews],
-            schedules=[ScheduleDto.model_validate(sch) for sch in schedules],
-            visit_briefs=[VisitBriefDto.model_validate(vb) for vb in visit_briefs],
-            settings=settings_map,
-            server_sync_time=utc_now().isoformat(),
-        )
-        return ApiResponse.ok(data.model_dump())
+        c_map = {c.id: c for c in clients}
+        s_map = {s.id: s for s in services}
+        now_iso = utc_now().isoformat()
+
+        def format_time_slot(t: str) -> str:
+            if not t:
+                return "09:00"
+            t = t.strip()
+            if ":" in t:
+                parts = t.split(":")
+                return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+            try:
+                return f"{int(t):02d}:00"
+            except Exception:
+                return t
+
+        serialized_appointments = []
+        for a in appointments:
+            c = c_map.get(a.client_id)
+            srv = s_map.get(a.service_id)
+            c_name = c.first_name if c and c.first_name else "Клієнт"
+            c_phone = c.phone if c and c.phone else ""
+            s_title = srv.title if srv and srv.title else "Послуга"
+
+            serialized_appointments.append({
+                "id": str(a.id),
+                "master_id": str(a.master_id or "m-01"),
+                "client_id": str(a.client_id or ""),
+                "client_name": str(c_name),
+                "client_phone": str(c_phone),
+                "service_id": str(a.service_id or ""),
+                "service_title": str(s_title),
+                "date": str(a.date or "").strip(),
+                "start_time": format_time_slot(str(a.start_time or "09:00")),
+                "end_time": format_time_slot(str(a.end_time or "10:00")),
+                "status": str(a.status or "PENDING"),
+                "total_price": float(a.total_price or 0.0),
+                "deposit_amount": float(getattr(a, "deposit_amount", 0.0) or 0.0),
+                "is_deposit_paid": bool(getattr(a, "is_deposit_paid", False)),
+                "cancellation_reason": str(a.cancellation_reason or ""),
+                "created_at": a.created_at.isoformat() if a.created_at else now_iso,
+                "updated_at": a.updated_at.isoformat() if a.updated_at else now_iso,
+                "deleted": bool(a.deleted),
+                "version": int(a.version or 1),
+            })
+
+        def safe_map(dto_cls: Any, items: list[Any]) -> list[Any]:
+            res = []
+            for item in items:
+                try:
+                    res.append(dto_cls.model_validate(item).model_dump(mode="json"))
+                except Exception as ex:
+                    logger.warning("DTO error for %s id=%s: %s", dto_cls.__name__, getattr(item, "id", None), ex)
+            return res
+
+        data = {
+            "appointments": serialized_appointments,
+            "clients": safe_map(ClientDto, clients),
+            "services": safe_map(ServiceDto, services),
+            "masters": safe_map(MasterDto, masters),
+            "incomes": safe_map(IncomeDto, incomes),
+            "expenses": safe_map(ExpenseDto, expenses),
+            "products": safe_map(ProductDto, products),
+            "reviews": safe_map(ReviewDto, reviews),
+            "schedules": safe_map(ScheduleDto, schedules),
+            "visit_briefs": safe_map(VisitBriefDto, visit_briefs),
+            "settings": settings_map,
+            "server_sync_time": now_iso,
+        }
+        return ApiResponse.ok(data)
 
     # 5. Action: appointment_create
     if action == "appointment_create":
@@ -755,7 +827,9 @@ async def unified_exec(
                 total_price=total_price,
                 deposit_amount=deposit_amount,
                 is_deposit_paid=is_deposit_paid,
-                cancellation_reason=""
+                cancellation_reason="",
+                created_at=utc_now(),
+                updated_at=utc_now()
             )
             db.add(new_apt)
             await db.flush()

@@ -21,6 +21,7 @@ import com.mastercrm.data.local.entity.AppointmentEntity
 import com.mastercrm.ui.theme.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -30,12 +31,24 @@ fun CalendarScreen() {
     val app = MasterCrmApp.instance
     val scope = rememberCoroutineScope()
 
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    val todayKyiv = remember { LocalDate.now(ZoneId.of("Europe/Kyiv")) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now(ZoneId.of("Europe/Kyiv"))) }
     val dateStr = selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     val appointments by app.database.appointmentDao()
         .getAppointmentsByDateFlow(dateStr)
         .collectAsState(initial = emptyList())
+
+    val allActiveAppointments by app.database.appointmentDao()
+        .getAllActiveAppointmentsFlow()
+        .collectAsState(initial = emptyList())
+
+    val datesWithAppointments = remember(allActiveAppointments) {
+        allActiveAppointments
+            .filter { it.status != "CANCELLED_BY_CLIENT" && it.status != "CANCELLED_BY_MASTER" }
+            .map { it.date }
+            .toSet()
+    }
 
     val clients by app.database.clientDao()
         .getAllClientsFlow()
@@ -61,7 +74,7 @@ fun CalendarScreen() {
                         onClick = {
                             scope.launch {
                                 isSyncing = true
-                                app.syncRepository.performSync()
+                                app.syncRepository.performSync(forceFullSync = true)
                                 isSyncing = false
                             }
                         }
@@ -69,7 +82,7 @@ fun CalendarScreen() {
                         if (isSyncing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Синхронізація")
+                            Icon(Icons.Default.Refresh, contentDescription = "Повна синхронізація")
                         }
                     }
                 },
@@ -105,14 +118,14 @@ fun CalendarScreen() {
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.clickable { selectedDate = LocalDate.now() }
+                    modifier = Modifier.clickable { selectedDate = todayKyiv }
                 ) {
                     Text(
                         text = selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")),
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
-                    if (selectedDate == LocalDate.now()) {
+                    if (selectedDate == todayKyiv) {
                         Text(
                             text = "Сьогодні",
                             color = RosePrimary,
@@ -127,20 +140,127 @@ fun CalendarScreen() {
                 }
             }
 
+            // Горизонтальна смужка дат із крапками-індикаторами
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                (-3..3).forEach { offset ->
+                    val day = selectedDate.plusDays(offset.toLong())
+                    val dayStr = day.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    val isSelected = offset == 0
+                    val hasApts = datesWithAppointments.contains(dayStr)
+                    val isToday = day == todayKyiv
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .background(
+                                color = if (isSelected) RosePrimary else if (isToday) RosePrimary.copy(alpha = 0.1f) else Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { selectedDate = day }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = day.format(DateTimeFormatter.ofPattern("EEE")),
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = day.dayOfMonth.toString(),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                        if (hasApts) {
+                            Text(text = "●", fontSize = 8.sp, color = if (isSelected) Color.White else RosePrimary)
+                        } else {
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                    }
+                }
+            }
+
             Divider(color = DividerColor)
 
             if (appointments.isEmpty()) {
+                val todayStr = todayKyiv.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val upcomingApts = remember(allActiveAppointments, dateStr, todayStr) {
+                    allActiveAppointments
+                        .filter { !it.deleted && it.status != "CANCELLED_BY_CLIENT" && it.status != "CANCELLED_BY_MASTER" && it.date >= todayStr }
+                        .take(5)
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(16.dp),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    Text(
-                        text = "На цей день немає записів.\nНатисніть '+' для створення.",
-                        color = Color.Gray,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                    ) {
+                        Text(
+                            text = "На обрану дату ($dateStr) записів немає.",
+                            color = Color.Gray,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        if (upcomingApts.isNotEmpty()) {
+                            Text(
+                                text = "📌 Найближчі активні записи:",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            upcomingApts.forEach { upcoming ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            try { selectedDate = LocalDate.parse(upcoming.date) } catch (_: Exception) {}
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(text = "📅 ${upcoming.date} о ${upcoming.startTime}", fontWeight = FontWeight.Bold, color = RosePrimary)
+                                            Text(text = "Послуга: ${servicesMap[upcoming.serviceId]?.title ?: "Манікюр"}", fontSize = 13.sp)
+                                            Text(text = "Клієнт: ${clientsMap[upcoming.clientId]?.firstName ?: "Клієнт"}", fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                        Button(
+                                            onClick = { try { selectedDate = LocalDate.parse(upcoming.date) } catch (_: Exception) {} },
+                                            colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                                        ) {
+                                            Text("Перейти", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    isSyncing = true
+                                    app.syncRepository.performSync(forceFullSync = true)
+                                    isSyncing = false
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Повна синхронізація з сервером")
+                        }
+                    }
                 }
             } else {
                 LazyColumn(

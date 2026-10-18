@@ -76,20 +76,23 @@ data class ServiceDto(
 
 data class AppointmentDto(
     @SerializedName("id") val id: String,
-    @SerializedName("master_id") val masterId: String,
-    @SerializedName("client_id") val clientId: String,
-    @SerializedName("service_id") val serviceId: String,
+    @SerializedName("master_id", alternate = ["masterId"]) val masterId: String? = "m-01",
+    @SerializedName("client_id", alternate = ["clientId"]) val clientId: String? = "",
+    @SerializedName("client_name", alternate = ["clientName"]) val clientName: String? = "",
+    @SerializedName("client_phone", alternate = ["clientPhone"]) val clientPhone: String? = "",
+    @SerializedName("service_id", alternate = ["serviceId"]) val serviceId: String? = "",
+    @SerializedName("service_title", alternate = ["serviceTitle"]) val serviceTitle: String? = "",
     @SerializedName("date") val date: String,
-    @SerializedName("start_time") val startTime: String,
-    @SerializedName("end_time") val endTime: String,
-    @SerializedName("status") val status: String,
-    @SerializedName("total_price") val totalPrice: Double,
-    @SerializedName("deposit_amount") val depositAmount: Double,
-    @SerializedName("is_deposit_paid") val isDepositPaid: Boolean,
-    @SerializedName("cancellation_reason") val cancellationReason: String?,
-    @SerializedName("deleted") val deleted: Boolean,
-    @SerializedName("version") val version: Int,
-    @SerializedName("updated_at") val updatedAt: String
+    @SerializedName("start_time", alternate = ["startTime"]) val startTime: String,
+    @SerializedName("end_time", alternate = ["endTime"]) val endTime: String,
+    @SerializedName("status") val status: String? = "PENDING",
+    @SerializedName("total_price", alternate = ["totalPrice"]) val totalPrice: Double = 0.0,
+    @SerializedName("deposit_amount", alternate = ["depositAmount"]) val depositAmount: Double = 0.0,
+    @SerializedName("is_deposit_paid", alternate = ["isDepositPaid"]) val isDepositPaid: Boolean = false,
+    @SerializedName("cancellation_reason", alternate = ["cancellationReason"]) val cancellationReason: String? = "",
+    @SerializedName("deleted") val deleted: Boolean = false,
+    @SerializedName("version") val version: Int = 1,
+    @SerializedName("updated_at", alternate = ["updatedAt"]) val updatedAt: String? = ""
 )
 
 data class IncomeDto(
