@@ -63,8 +63,16 @@ def get_kyiv_today() -> str:
     return datetime.now(kyiv_tz).strftime("%Y-%m-%d")
 
 
+def format_time_str(t_str: str) -> str:
+    if t_str and t_str.isdigit() and len(t_str) <= 2:
+        return f"{int(t_str):02d}:00"
+    return t_str
+
+
 def time_to_minutes(t_str: str) -> int:
     try:
+        if ":" not in t_str and t_str.isdigit():
+            t_str = f"{int(t_str):02d}:00"
         h, m = map(int, t_str.split(":"))
         return h * 60 + m
     except Exception:
@@ -73,6 +81,8 @@ def time_to_minutes(t_str: str) -> int:
 
 def calculate_end_time(start_str: str, duration_minutes: int) -> str:
     try:
+        if ":" not in start_str and start_str.isdigit():
+            start_str = f"{int(start_str):02d}:00"
         parts = start_str.split(":")
         start_min = int(parts[0]) * 60 + int(parts[1])
         end_min = start_min + duration_minutes
@@ -764,7 +774,7 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
     s_title = data.get("service_title", "Послуга")
     s_price = data.get("service_price", 0)
     date_str = data.get("date", "")
-    start_time = data.get("start_time", "")
+    start_time = format_time_str(data.get("start_time", ""))
     client_name = data.get("client_name", "Клієнт")
     client_phone = data.get("client_phone", "")
 
@@ -789,7 +799,7 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
 
 @client_router.callback_query(BookingStates.waiting_for_time, F.data.startswith("time:"))
 async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> None:
-    slot_choice = callback.data.split(":")[1]
+    slot_choice = callback.data.split(":", 1)[1]
 
     if slot_choice == "waitlist":
         data = await state.get_data()
@@ -957,7 +967,7 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
     m_id = data.get("master_id", "m-01")
     s_id = data.get("service_id")
     date_str = data.get("date")
-    start_time = data.get("start_time", "10:00")
+    start_time = format_time_str(data.get("start_time", "10:00"))
     client_name = data.get("client_name", "Клієнт")
     client_phone = data.get("client_phone", "")
     client_id = data.get("client_id")
