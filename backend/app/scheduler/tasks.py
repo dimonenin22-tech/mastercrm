@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.bot.bot_instance import bot
 from app.bot.keyboards import get_review_rating_keyboard
 from app.config import settings
@@ -226,13 +227,15 @@ async def send_post_visit_and_14day_checks() -> None:
                 if bot:
                     msg = (
                         f"💅 <b>Дякуємо за візит до нашої студії!</b>\n\n"
-                        f"Будь ласка, оцініть якість послуги та атмосферу від 1 до 5 зірочок:"
+                        f"Як вам якість послуги та атмосфера? Поділіться, будь ласка, своїми враженнями:"
                     )
                     try:
                         await bot.send_message(
                             chat_id=apt.client.telegram_id,
                             text=msg,
-                            reply_markup=get_review_rating_keyboard(apt.id),
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                [InlineKeyboardButton(text="✍️ Написати відгук", callback_data=f"rev_start:{apt.id}")]
+                            ]),
                             parse_mode="HTML"
                         )
                     except Exception as e:
@@ -261,31 +264,12 @@ async def send_post_visit_and_14day_checks() -> None:
 
                 already_sent = {n.reminder_type for n in apt.notifications if n.status == "SUCCESS"}
                 if "2weeks_review" not in already_sent:
-                    # Check if client has future active appointment
-                    future_stmt = select(Appointment).where(
-                        Appointment.client_id == apt.client_id,
-                        Appointment.date > apt.date,
-                        Appointment.status.in_(["PENDING", "CONFIRMED"]),
-                        Appointment.deleted.is_(False)
-                    ).order_by(Appointment.date.asc(), Appointment.start_time.asc())
-                    future_res = await db.execute(future_stmt)
-                    next_apt = future_res.scalars().first()
-                    has_future = next_apt is not None
-
                     service_title = apt.service.title if apt.service else "манікюр"
-                    client_name = apt.client.first_name
 
                     msg = (
-                        f"💅 <b>Привіт, {html.escape(client_name)}!</b>\n\n"
-                        f"Минуло 2 тижні з вашого візиту («{html.escape(service_title)}»). "
-                        f"Розкажіть, будь ласка, як носиться покриття? "
-                        f"Оцініть стан від 1 до 5 ⭐ або надішліть у відповідь текстовий відгук та 📸 фото стану нігтів зараз!"
+                        f"💅 <b>Минуло 2 тижні з вашого візиту ({html.escape(service_title)})!</b>\n"
+                        f"Будь ласка, розкажіть, як носиться ваше покриття та чи все чудово:"
                     )
-
-                    if not has_future:
-                        msg += "\n\n✨ <b>До речі, у вас ще немає нового запису</b> — оберіть зручне віконце завчасно, поки є вільні місця!"
-                    else:
-                        msg += f"\n\n📅 <b>Нагадуємо:</b> ваш наступний візит вже заплановано на <b>{next_apt.date} о {next_apt.start_time}</b>!"
 
                     log = NotificationLog(
                         appointment_id=apt.id,
@@ -295,12 +279,13 @@ async def send_post_visit_and_14day_checks() -> None:
                     )
                     db.add(log)
                     if bot:
-                        from app.bot.keyboards import get_wear_check_keyboard
                         try:
                             await bot.send_message(
                                 chat_id=apt.client.telegram_id,
                                 text=msg,
-                                reply_markup=get_wear_check_keyboard(apt.id, has_future),
+                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                    [InlineKeyboardButton(text="💬 Розповісти як носиться покриття", callback_data=f"wear_start:{apt.id}")]
+                                ]),
                                 parse_mode="HTML"
                             )
                         except Exception as e:

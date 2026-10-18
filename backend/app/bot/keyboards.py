@@ -146,6 +146,14 @@ def get_review_rating_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[row])
 
 
+def get_post_review_stars_keyboard() -> InlineKeyboardMarkup:
+    row = [
+        InlineKeyboardButton(text=f"{score} ⭐", callback_data=f"rev_star:{score}")
+        for score in [5, 4, 3, 2, 1]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row])
+
+
 def get_wear_check_keyboard(appointment_id: str, has_future_booking: bool) -> InlineKeyboardMarkup:
     stars_row = [
         InlineKeyboardButton(text=f"{score} ⭐", callback_data=f"review_{appointment_id}_{score}")
@@ -203,8 +211,11 @@ def get_client_main_inline_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="📋 Прайс", callback_data="m:price"),
             ],
             [
-                InlineKeyboardButton(text="👩🎨 Про студію", callback_data="m:about"),
+                InlineKeyboardButton(text="⭐ Відгуки клієнтів", callback_data="m:reviews:0"),
                 InlineKeyboardButton(text="📝 Лист очікування", callback_data="m:waitlist"),
+            ],
+            [
+                InlineKeyboardButton(text="👩🎨 Про студію", callback_data="m:about"),
             ],
         ]
     )

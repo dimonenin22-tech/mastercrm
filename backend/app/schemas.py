@@ -154,12 +154,17 @@ class ReviewDto(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    appointment_id: str
-    client_id: str
-    rating: int
+    appointment_id: Optional[str] = ""
+    client_id: Optional[str] = ""
+    client_name: Optional[str] = ""
+    service_title: Optional[str] = ""
+    rating: int = 5
     comment: Optional[str] = ""
-    moderation_status: str
-    is_published: bool
+    photo_url: Optional[str] = ""
+    tg_file_id: Optional[str] = ""
+    review_type: str = "POST_VISIT"
+    moderation_status: str = "APPROVED"
+    is_published: bool = True
     created_at: datetime
     updated_at: datetime
     deleted: bool

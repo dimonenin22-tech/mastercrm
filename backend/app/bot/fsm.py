@@ -19,6 +19,10 @@ class ReceiptUploadStates(StatesGroup):
 
 class ReviewStates(StatesGroup):
     waiting_for_comment = State()
+    waiting_for_post_review_text = State()
+    waiting_for_post_review_stars = State()
+    waiting_for_wear_text = State()
+    waiting_for_wear_photo = State()
 
 
 class WaitingListStates(StatesGroup):

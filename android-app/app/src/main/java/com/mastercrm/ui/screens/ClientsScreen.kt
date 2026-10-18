@@ -3,6 +3,7 @@ package com.mastercrm.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,7 +17,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -372,6 +376,7 @@ fun ClientDetailBottomSheet(
     val appointments by app.database.appointmentDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val briefs by app.database.visitBriefDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val latestBrief = briefs.firstOrNull()
+    val reviews by app.database.reviewDao().getReviewsForClientFlow(client.id).collectAsState(initial = emptyList())
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -583,6 +588,59 @@ fun ClientDetailBottomSheet(
                                 Text(apt.status, color = if (apt.status == "COMPLETED") StatusCompleted else RosePrimary, fontSize = 11.sp)
                             }
                             Text("${apt.totalPrice.toInt()} ₴", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+
+            // Reviews & Wear Reports Section
+            item {
+                Text("⭐ Відгуки та стан покриття (${reviews.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+
+            if (reviews.isEmpty()) {
+                item {
+                    Text("Відгуків від клієнта поки немає.", color = Color.Gray, fontSize = 13.sp)
+                }
+            } else {
+                items(reviews, key = { it.id }) { rev ->
+                    ElevatedCard(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val isWear = rev.reviewType == "WEAR_2WEEKS"
+                                Text(
+                                    if (isWear) "✨ Через 2 тижні (Носка)" else "💅 Після візиту",
+                                    fontSize = 11.sp,
+                                    color = RosePrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text("⭐".repeat(rev.rating.coerceIn(1, 5)), fontSize = 12.sp)
+                            }
+                            if (!rev.comment.isNullOrBlank()) {
+                                Text("«${rev.comment}»", fontSize = 13.sp)
+                            }
+                            if (!rev.photoUrl.isNullOrBlank()) {
+                                val thumbBmp = remember(rev.photoUrl) { decodeBase64ToBitmap(rev.photoUrl) }
+                                if (thumbBmp != null) {
+                                    Image(
+                                        bitmap = thumbBmp.asImageBitmap(),
+                                        contentDescription = "Фото стану покриття",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                }
+                            }
                         }
                     }
                 }

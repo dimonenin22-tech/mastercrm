@@ -155,6 +155,9 @@ interface ReviewDao {
     @Query("SELECT * FROM reviews WHERE deleted = 0 ORDER BY updatedAt DESC")
     fun getAllReviewsFlow(): Flow<List<ReviewEntity>>
 
+    @Query("SELECT * FROM reviews WHERE clientId = :clientId AND deleted = 0 ORDER BY updatedAt DESC")
+    fun getReviewsForClientFlow(clientId: String): Flow<List<ReviewEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateAll(reviews: List<ReviewEntity>)
 

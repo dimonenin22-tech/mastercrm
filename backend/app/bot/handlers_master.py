@@ -8,7 +8,7 @@ import pytz
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +21,7 @@ from app.models import (
     Client,
     Device,
     Master,
+    Review,
     StudioSetting,
     WaitingList,
     utc_now,
@@ -472,3 +473,94 @@ async def save_setting_value(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("✅ <b>Налаштування збережено!</b>", parse_mode="HTML")
     await cmd_admin_panel(message)
+
+
+# 9. /reviews - Master & Owner Review Management
+@master_router.message(Command("reviews"))
+async def cmd_master_reviews(message: Message) -> None:
+    chat_id = message.from_user.id if message.from_user else 0
+    async with AsyncSessionLocal() as db:
+        m_res = await db.execute(
+            select(Master).where(Master.telegram_chat_id == chat_id, Master.deleted.is_(False))
+        )
+        master = m_res.scalar_one_or_none()
+        if not master:
+            await message.answer("❌ Ця команда доступна лише для зареєстрованих майстрів студії.")
+            return
+
+        revs_stmt = (
+            select(Review)
+            .where(Review.deleted.is_(False))
+            .order_by(Review.created_at.desc())
+            .limit(10)
+        )
+        revs = (await db.execute(revs_stmt)).scalars().all()
+
+        if not revs:
+            await message.answer("⭐ <b>Поки немає відгуків від клієнтів.</b>", parse_mode="HTML")
+            return
+
+        await message.answer(f"⭐ <b>Останні {len(revs)} відгуків клієнтів:</b>", parse_mode="HTML")
+        for r in revs:
+            c_name = r.client_name or "Клієнт"
+            s_title = r.service_title or "Послуга"
+            t_badge = "💅 [10 хв після візиту]" if r.review_type == "POST_VISIT" else "✨ [2 тижні (носка)]"
+            stars = "⭐" * r.rating
+            pub_status = "🟢 Опубліковано" if r.is_published else "⚪ Приховано"
+
+            text = (
+                f"👤 <b>{html.escape(c_name)}</b> {t_badge}\n"
+                f"💅 <i>{html.escape(s_title)}</i> | {stars} ({r.rating}/5)\n"
+                f"💬 «{html.escape(r.comment or 'Без коментаря')}»\n"
+                f"Статус: <b>{pub_status}</b>"
+            )
+
+            row: list[InlineKeyboardButton] = []
+            if r.tg_file_id:
+                row.append(InlineKeyboardButton(text="📸 Переглянути фото", callback_data=f"rev_pic:{r.id}"))
+            toggle_label = "Приховати ❌" if r.is_published else "Опублікувати ✅"
+            row.append(InlineKeyboardButton(text=toggle_label, callback_data=f"rev_mod:{r.id}"))
+
+            kb = InlineKeyboardMarkup(inline_keyboard=[row])
+            await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@master_router.callback_query(F.data.startswith("rev_mod:"))
+async def process_master_review_mod(callback: CallbackQuery) -> None:
+    rev_id = callback.data.split(":")[1]
+    async with AsyncSessionLocal() as db:
+        rev = await db.get(Review, rev_id)
+        if not rev:
+            await callback.answer("Відгук не знайдено.", show_alert=True)
+            return
+
+        rev.is_published = not rev.is_published
+        rev.moderation_status = "APPROVED" if rev.is_published else "REJECTED"
+        rev.mark_updated()
+        await db.commit()
+
+        status_text = "опубліковано" if rev.is_published else "приховано"
+        await callback.answer(f"Відгук {status_text}!", show_alert=True)
+
+        c_name = rev.client_name or "Клієнт"
+        s_title = rev.service_title or "Послуга"
+        t_badge = "💅 [10 хв після візиту]" if rev.review_type == "POST_VISIT" else "✨ [2 тижні (носка)]"
+        stars = "⭐" * rev.rating
+        pub_status = "🟢 Опубліковано" if rev.is_published else "⚪ Приховано"
+
+        text = (
+            f"👤 <b>{html.escape(c_name)}</b> {t_badge}\n"
+            f"💅 <i>{html.escape(s_title)}</i> | {stars} ({rev.rating}/5)\n"
+            f"💬 «{html.escape(rev.comment or 'Без коментаря')}»\n"
+            f"Статус: <b>{pub_status}</b>"
+        )
+        row: list[InlineKeyboardButton] = []
+        if rev.tg_file_id:
+            row.append(InlineKeyboardButton(text="📸 Переглянути фото", callback_data=f"rev_pic:{rev.id}"))
+        toggle_label = "Приховати ❌" if rev.is_published else "Опублікувати ✅"
+        row.append(InlineKeyboardButton(text=toggle_label, callback_data=f"rev_mod:{rev.id}"))
+
+        try:
+            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[row]), parse_mode="HTML")
+        except Exception:
+            pass

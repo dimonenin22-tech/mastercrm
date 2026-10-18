@@ -31,8 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.mastercrm.MasterCrmApp
+import com.mastercrm.data.local.entity.ReviewEntity
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
@@ -45,7 +47,8 @@ import java.util.Locale
 enum class StoryMode(val title: String) {
     FREE_SLOTS("Вільні віконця"),
     PRICE_LIST("Прайс-лист"),
-    CLIENT_REVIEW("Відгук (TG Чат)")
+    CLIENT_REVIEW("Відгук (TG Чат)"),
+    ALL_REVIEWS_LIST("Усі відгуки")
 }
 
 enum class CanvaStyle(
@@ -121,10 +124,29 @@ data class ClientStoryOption(
 
 data class SavedReviewOption(
     val id: String,
-    val rating: Int,
-    val comment: String,
-    val serviceTitle: String
+    val clientName: String = "Клієнт",
+    val rating: Int = 5,
+    val comment: String = "",
+    val serviceTitle: String = "Манікюр",
+    val photoUrl: String? = null,
+    val reviewType: String = "POST_VISIT",
+    val updatedAt: String = ""
 )
+
+fun decodeBase64ToBitmap(dataUriOrBase64: String?): Bitmap? {
+    if (dataUriOrBase64.isNullOrBlank()) return null
+    return try {
+        val base64Data = if (dataUriOrBase64.contains(",")) {
+            dataUriOrBase64.substringAfter(",")
+        } else {
+            dataUriOrBase64
+        }
+        val bytes = android.util.Base64.decode(base64Data.trim(), android.util.Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } catch (e: Exception) {
+        null
+    }
+}
 
 // =====================================================================
 // 2. ЯДРО РЕНДЕРИНГУ CANVA BITMAP (1080x1920) ДЛЯ LIVE PREVIEW ТА ЕКСПОРТУ
@@ -195,7 +217,7 @@ object CanvaStoryRenderer {
         when (mode) {
             StoryMode.FREE_SLOTS -> drawFreeSlotsContent(canvas, w, style, dateLabel, selectedSlots)
             StoryMode.PRICE_LIST -> drawPriceListContent(canvas, w, style, services.filter { it.includedInStory }, showDurationOnPrice)
-            StoryMode.CLIENT_REVIEW -> drawTelegramReviewContent(
+            StoryMode.CLIENT_REVIEW, StoryMode.ALL_REVIEWS_LIST -> drawTelegramReviewContent(
                 canvas, w, style, reviewClientName, reviewServiceTitle, reviewStars, reviewComment, reviewMasterReply
             )
         }
@@ -474,12 +496,14 @@ fun MarketingStudioScreen(
     // Функція, що повертає РЕАЛЬНО вільні віконця з локальної Room БД на вибрану дату
     getRealFreeSlotsForDate: (String) -> List<String>,
     initialServices: List<ServiceStoryItem>,
-    clientsWithReviews: List<ClientStoryOption>
+    clientsWithReviews: List<ClientStoryOption>,
+    allReviews: List<ReviewEntity> = emptyList()
 ) {
     val context = LocalContext.current
 
     var selectedMode by remember { mutableStateOf(StoryMode.FREE_SLOTS) }
     var selectedStyle by remember { mutableStateOf(CanvaStyle.GLAMOUR_DARK) }
+    var viewingPhotoUrl by remember { mutableStateOf<String?>(null) }
 
     // --- Стан для Вільних віконець ---
     val next7Days = remember {
@@ -525,6 +549,7 @@ fun MarketingStudioScreen(
                 StoryMode.FREE_SLOTS -> "ВІЛЬНІ ВІКОНЦЯ"
                 StoryMode.PRICE_LIST -> "ПРАЙС ПОСЛУГ"
                 StoryMode.CLIENT_REVIEW -> "ВІДГУКИ КЛІЄНТІВ"
+                StoryMode.ALL_REVIEWS_LIST -> "УСІ ВІДГУКИ"
             }
         )
     }
@@ -574,64 +599,66 @@ fun MarketingStudioScreen(
             }
         }
 
-        // 2. LIVE PREVIEW ПРЯМО В ЗАСТОСУНКУ + КНОПКА ПОДІЛИТИСЯ
-        item {
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+        if (selectedMode != StoryMode.ALL_REVIEWS_LIST) {
+            // 2. LIVE PREVIEW ПРЯМО В ЗАСТОСУНКУ + КНОПКА ПОДІЛИТИСЯ
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp)
                 ) {
-                    Text(
-                        text = "👁 Передперегляд Stories (Наживо)",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(10.dp))
-
-                    Image(
-                        bitmap = previewBitmap.asImageBitmap(),
-                        contentDescription = "Story Live Preview",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth(0.62f)
-                            .aspectRatio(9f / 16f)
-                            .clip(RoundedCornerShape(18.dp))
-                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
-                    )
-
-                    Spacer(Modifier.height(14.dp))
-
-                    Button(
-                        onClick = { CanvaStoryRenderer.shareBitmapToStories(context, previewBitmap) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Поділитися в Instagram Stories / Telegram", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "👁 Передперегляд Stories (Наживо)",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(10.dp))
+
+                        Image(
+                            bitmap = previewBitmap.asImageBitmap(),
+                            contentDescription = "Story Live Preview",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth(0.62f)
+                                .aspectRatio(9f / 16f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .border(2.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Button(
+                            onClick = { CanvaStoryRenderer.shareBitmapToStories(context, previewBitmap) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Поділитися в Instagram Stories / Telegram", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
-        }
 
-        // 3. ВИБІР ОДНОГО З 5 СТИЛІВ CANVA
-        item {
-            Text("🎨 Стиль оформлення Canva (5 шаблонів):", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(CanvaStyle.entries) { style ->
-                    val isSelected = style == selectedStyle
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { selectedStyle = style },
-                        label = { Text(style.label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                        leadingIcon = if (isSelected) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                        } else null
-                    )
+            // 3. ВИБІР ОДНОГО З 5 СТИЛІВ CANVA
+            item {
+                Text("🎨 Стиль оформлення Canva (5 шаблонів):", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(CanvaStyle.entries) { style ->
+                        val isSelected = style == selectedStyle
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedStyle = style },
+                            label = { Text(style.label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            } else null
+                        )
+                    }
                 }
             }
         }
@@ -746,6 +773,28 @@ fun MarketingStudioScreen(
                 item {
                     OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (allReviews.isNotEmpty()) {
+                                Text("⭐ Швидкий вибір із відгуків клієнтів (в 1 клік):", style = MaterialTheme.typography.titleSmall)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(allReviews.take(15)) { rv ->
+                                        AssistChip(
+                                            onClick = {
+                                                reviewClientName = rv.clientName.ifBlank { "Клієнт" }
+                                                reviewServiceTitle = rv.serviceTitle.ifBlank { "Манікюр" }
+                                                reviewComment = rv.comment ?: ""
+                                                reviewStars = rv.rating
+                                            },
+                                            label = {
+                                                val badge = if (rv.reviewType == "WEAR_2WEEKS") "✨ 2 тиж: " else "💅 "
+                                                val shortText = (rv.comment ?: "").take(20)
+                                                Text("$badge${rv.rating}⭐ ${rv.clientName}: $shortText…")
+                                            }
+                                        )
+                                    }
+                                }
+                                HorizontalDivider()
+                            }
+
                             Text("👤 1. Оберіть клієнта з бази (опціонально) або редагуйте вручну:", style = MaterialTheme.typography.titleSmall)
 
                             ExposedDropdownMenuBox(
@@ -885,28 +934,184 @@ fun MarketingStudioScreen(
                         }
                     }
                 }
+            StoryMode.ALL_REVIEWS_LIST -> {
+                item {
+                    Text(
+                        text = "⭐ Усі збережені відгуки студії (${allReviews.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (allReviews.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("Поки що немає збережених відгуків.", style = MaterialTheme.typography.bodyLarge)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "Відгуки з'являтимуться тут автоматично після опитувань клієнтів у Telegram!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(allReviews, key = { it.id }) { rev ->
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val isWear = rev.reviewType == "WEAR_2WEEKS"
+                                    SuggestionChip(
+                                        onClick = {},
+                                        label = {
+                                            Text(
+                                                if (isWear) "✨ Через 2 тижні (Носка)" else "💅 Після візиту (10 хв)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    )
+                                    Text("⭐".repeat(rev.rating.coerceIn(1, 5)), fontSize = 14.sp)
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = rev.clientName.ifBlank { "Клієнт" },
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "💅 ${rev.serviceTitle.ifBlank { "Манікюр" }}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            text = if (!rev.comment.isNullOrBlank()) "«${rev.comment}»" else "«Без текстового коментаря»",
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+
+                                    if (!rev.photoUrl.isNullOrBlank()) {
+                                        val thumbBmp = remember(rev.photoUrl) { decodeBase64ToBitmap(rev.photoUrl) }
+                                        if (thumbBmp != null) {
+                                            Image(
+                                                bitmap = thumbBmp.asImageBitmap(),
+                                                contentDescription = "Фото нігтів",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(76.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                                                    .clickable { viewingPhotoUrl = rev.photoUrl }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        reviewClientName = rev.clientName.ifBlank { "Клієнт" }
+                                        reviewServiceTitle = rev.serviceTitle.ifBlank { "Манікюр" }
+                                        reviewComment = rev.comment.orEmpty()
+                                        reviewStars = rev.rating
+                                        selectedMode = StoryMode.CLIENT_REVIEW
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("✨ В Сторіс (Автозаповнення)")
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // 5. РЕДАГУВАННЯ ЗАГОЛОВКА ТА ПІДПИСУ СТОРІС
-        item {
-            OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("✏️ Тексти на шаблоні:", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(
-                        value = headerText,
-                        onValueChange = { headerText = it },
-                        label = { Text("Заголовок шаблону") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = footerText,
-                        onValueChange = { footerText = it },
-                        label = { Text("Нижній підпис (CTA)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+        if (selectedMode != StoryMode.ALL_REVIEWS_LIST) {
+            // 5. РЕДАГУВАННЯ ЗАГОЛОВКА ТА ПІДПИСУ СТОРІС
+            item {
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("✏️ Тексти на шаблоні:", style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(
+                            value = headerText,
+                            onValueChange = { headerText = it },
+                            label = { Text("Заголовок шаблону") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = footerText,
+                            onValueChange = { footerText = it },
+                            label = { Text("Нижній підпис (CTA)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (viewingPhotoUrl != null) {
+        val fullBmp = remember(viewingPhotoUrl) { decodeBase64ToBitmap(viewingPhotoUrl) }
+        Dialog(onDismissRequest = { viewingPhotoUrl = null }) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth(0.92f)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("📸 Фото стану покриття", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    if (fullBmp != null) {
+                        Image(
+                            bitmap = fullBmp.asImageBitmap(),
+                            contentDescription = "Фото нігтів",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(14.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text("Не вдалося завантажити фото.")
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Button(
+                        onClick = { viewingPhotoUrl = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Закрити")
+                    }
                 }
             }
         }
@@ -987,12 +1192,18 @@ fun MarketingScreen() {
         clientEntities.map { cl ->
             val clReviews = reviewEntities.filter { it.clientId == cl.id }.map { rv ->
                 val appFound = appointmentEntities.find { it.id == rv.appointmentId }
-                val srvTitle = appFound?.serviceId?.let { sId -> serviceEntities.find { it.id == sId }?.title } ?: "Комплекс Манікюр"
+                val srvTitle = rv.serviceTitle.ifBlank {
+                    appFound?.serviceId?.let { sId -> serviceEntities.find { it.id == sId }?.title } ?: "Комплекс Манікюр"
+                }
                 SavedReviewOption(
                     id = rv.id,
+                    clientName = rv.clientName.ifBlank { cl.firstName },
                     rating = rv.rating,
                     comment = rv.comment ?: "",
-                    serviceTitle = srvTitle
+                    serviceTitle = srvTitle,
+                    photoUrl = rv.photoUrl,
+                    reviewType = rv.reviewType,
+                    updatedAt = rv.updatedAt
                 )
             }
             val lastApp = appointmentEntities.filter { it.clientId == cl.id }.maxByOrNull { it.date }
@@ -1017,6 +1228,7 @@ fun MarketingScreen() {
             }
         },
         initialServices = services,
-        clientsWithReviews = clientsWithReviews
+        clientsWithReviews = clientsWithReviews,
+        allReviews = reviewEntities
     )
 }

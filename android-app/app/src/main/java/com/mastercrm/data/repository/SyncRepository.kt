@@ -282,19 +282,37 @@ class SyncRepository(
                 if (dto.deleted) {
                     db.reviewDao().deleteById(dto.id)
                 } else {
+                    val resolvedClientName = if (!dto.clientName.isNullOrBlank()) {
+                        dto.clientName
+                    } else {
+                        dto.clientId?.let { cId -> db.clientDao().getById(cId)?.firstName } ?: "Клієнт"
+                    }
+                    val resolvedServiceTitle = if (!dto.serviceTitle.isNullOrBlank()) {
+                        dto.serviceTitle
+                    } else {
+                        dto.appointmentId?.let { aId ->
+                            val apt = db.appointmentDao().getById(aId)
+                            apt?.serviceId?.let { sId -> db.serviceDao().getById(sId)?.title }
+                        } ?: "Манікюр"
+                    }
                     db.reviewDao().insertOrUpdateAll(
                         listOf(
                             ReviewEntity(
                                 id = dto.id,
-                                appointmentId = dto.appointmentId,
-                                clientId = dto.clientId,
+                                appointmentId = dto.appointmentId ?: "",
+                                clientId = dto.clientId ?: "",
+                                clientName = resolvedClientName,
+                                serviceTitle = resolvedServiceTitle,
                                 rating = dto.rating,
                                 comment = dto.comment,
-                                moderationStatus = dto.moderationStatus,
+                                photoUrl = dto.photoUrl,
+                                tgFileId = dto.tgFileId,
+                                reviewType = dto.reviewType ?: "POST_VISIT",
+                                moderationStatus = dto.moderationStatus ?: "APPROVED",
                                 isPublished = dto.isPublished,
                                 deleted = dto.deleted,
                                 version = dto.version,
-                                updatedAt = dto.updatedAt
+                                updatedAt = dto.updatedAt ?: ""
                             )
                         )
                     )

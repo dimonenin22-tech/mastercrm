@@ -133,15 +133,20 @@ data class ProductDto(
 
 data class ReviewDto(
     @SerializedName("id") val id: String,
-    @SerializedName("appointment_id") val appointmentId: String,
-    @SerializedName("client_id") val clientId: String,
-    @SerializedName("rating") val rating: Int,
+    @SerializedName("appointment_id") val appointmentId: String?,
+    @SerializedName("client_id") val clientId: String?,
+    @SerializedName("client_name") val clientName: String? = null,
+    @SerializedName("service_title") val serviceTitle: String? = null,
+    @SerializedName("rating") val rating: Int = 5,
     @SerializedName("comment") val comment: String?,
-    @SerializedName("moderation_status") val moderationStatus: String,
-    @SerializedName("is_published") val isPublished: Boolean,
-    @SerializedName("deleted") val deleted: Boolean,
-    @SerializedName("version") val version: Int,
-    @SerializedName("updated_at") val updatedAt: String
+    @SerializedName("photo_url") val photoUrl: String? = null,
+    @SerializedName("tg_file_id") val tgFileId: String? = null,
+    @SerializedName("review_type") val reviewType: String? = "POST_VISIT",
+    @SerializedName("moderation_status") val moderationStatus: String? = "APPROVED",
+    @SerializedName("is_published") val isPublished: Boolean = true,
+    @SerializedName("deleted") val deleted: Boolean = false,
+    @SerializedName("version") val version: Int = 1,
+    @SerializedName("updated_at") val updatedAt: String? = null
 )
 
 data class SyncResponseDto(

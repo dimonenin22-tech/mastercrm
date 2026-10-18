@@ -569,7 +569,10 @@ async def unified_exec(
                 "id": r.id,
                 "rating": r.rating,
                 "comment": r.comment,
-                "client_name": r.client.first_name if r.client else "Клієнт",
+                "client_name": r.client_name or (r.client.first_name if r.client else "Клієнт"),
+                "service_title": r.service_title or "",
+                "photo_url": r.photo_url or "",
+                "review_type": r.review_type or "POST_VISIT",
                 "created_at": r.created_at.isoformat() if r.created_at else ""
             }
             for r in revs

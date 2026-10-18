@@ -52,6 +52,11 @@ async def init_and_seed_db() -> None:
             "ALTER TABLE visit_briefs ADD COLUMN health_notes TEXT DEFAULT ''",
             "ALTER TABLE visit_briefs ADD COLUMN photo_before_url TEXT DEFAULT ''",
             "ALTER TABLE visit_briefs ADD COLUMN photo_after_url TEXT DEFAULT ''",
+            "ALTER TABLE reviews ADD COLUMN client_name TEXT DEFAULT ''",
+            "ALTER TABLE reviews ADD COLUMN service_title TEXT DEFAULT ''",
+            "ALTER TABLE reviews ADD COLUMN photo_url TEXT DEFAULT ''",
+            "ALTER TABLE reviews ADD COLUMN tg_file_id TEXT DEFAULT ''",
+            "ALTER TABLE reviews ADD COLUMN review_type TEXT DEFAULT 'POST_VISIT'",
         ]:
             try:
                 await conn.execute(text(col_sql))

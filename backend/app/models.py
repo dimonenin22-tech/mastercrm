@@ -265,15 +265,20 @@ class StockMovement(Base, BaseMixin):
 class Review(Base, BaseMixin):
     __tablename__ = "reviews"
 
-    appointment_id: Mapped[str] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=False)
-    client_id: Mapped[str] = mapped_column(String(64), ForeignKey("clients.id"), nullable=False)
-    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..5
+    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True)
+    client_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("clients.id"), nullable=True)
+    client_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, default="")
+    service_title: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, default="")
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, default=5)  # 1..5
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
-    moderation_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)  # PENDING, APPROVED, REJECTED
-    is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
+    tg_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
+    review_type: Mapped[str] = mapped_column(String(32), default="POST_VISIT", nullable=False)  # POST_VISIT, WEAR_2WEEKS
+    moderation_status: Mapped[str] = mapped_column(String(32), default="APPROVED", nullable=False)  # PENDING, APPROVED, REJECTED
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="reviews")
-    client: Mapped["Client"] = relationship("Client", back_populates="reviews")
+    appointment: Mapped[Optional["Appointment"]] = relationship("Appointment", back_populates="reviews")
+    client: Mapped[Optional["Client"]] = relationship("Client", back_populates="reviews")
 
 
 class NotificationLog(Base, BaseMixin):

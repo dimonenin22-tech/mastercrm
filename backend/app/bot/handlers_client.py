@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
+import base64
+import io
 import pytz
 
 from aiogram import F, Router
@@ -29,6 +31,7 @@ from app.bot.keyboards import (
     get_master_notification_keyboard,
     get_master_receipt_approval_keyboard,
     get_review_rating_keyboard,
+    get_post_review_stars_keyboard,
     get_services_keyboard,
     get_time_slots_keyboard,
 )
@@ -1165,20 +1168,441 @@ async def process_booking_start_callback(callback: CallbackQuery, state: FSMCont
     await start_booking_flow(callback.message, state)
 
 
-@client_router.callback_query(F.data.startswith("wear_fb:"))
-async def process_wear_feedback_click(callback: CallbackQuery, state: FSMContext) -> None:
+# =====================================================================
+# FLOW A: POST-VISIT REVIEW (10 MIN) — TEXT FIRST -> 1..5 STARS
+# =====================================================================
+@client_router.callback_query(F.data.startswith("rev_start:"))
+async def process_post_review_start(callback: CallbackQuery, state: FSMContext) -> None:
     apt_id = callback.data.split(":")[1]
-    await state.update_data(wear_apt_id=apt_id)
-    await state.set_state(ReviewStates.waiting_for_comment)
+    await state.update_data(review_apt_id=apt_id)
+    await state.set_state(ReviewStates.waiting_for_post_review_text)
     await callback.message.answer(
-        "📸 <b>Будь ласка, надішліть фото ваших нігтиків або напишіть кілька слів у відповідь:</b>",
+        "✍️ <b>Напишіть, будь ласка, ваш текстовий відгук:</b>\n"
+        "Як вам якість послуги, форма нігтів та атмосфера?",
         parse_mode="HTML"
     )
     await callback.answer()
 
 
+@client_router.message(ReviewStates.waiting_for_post_review_text, F.text)
+async def process_post_review_text(message: Message, state: FSMContext) -> None:
+    comment = message.text.strip()
+    await state.update_data(review_comment=comment)
+    await state.set_state(ReviewStates.waiting_for_post_review_stars)
+    await message.answer(
+        "⭐ <b>Чудово! А тепер оберіть вашу оцінку від 1 до 5 зірочок:</b>",
+        reply_markup=get_post_review_stars_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@client_router.callback_query(F.data.startswith("rev_star:"))
+async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) -> None:
+    rating = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    apt_id = data.get("review_apt_id")
+    comment = data.get("review_comment", "")
+
+    async with AsyncSessionLocal() as db:
+        tg_id = callback.from_user.id if callback.from_user else 0
+        c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id))
+        client = c_res.scalar_one_or_none()
+
+        apt = await db.get(Appointment, apt_id) if apt_id else None
+        if not client and apt:
+            client = await db.get(Client, apt.client_id)
+
+        client_name = client.first_name if client else "Клієнт"
+        service_title = "Манікюр"
+        if apt and apt.service_id:
+            srv = await db.get(Service, apt.service_id)
+            if srv:
+                service_title = srv.title
+
+        rev_stmt = select(Review).where(
+            Review.appointment_id == apt_id,
+            Review.review_type == "POST_VISIT",
+            Review.deleted.is_(False)
+        )
+        existing_rev = (await db.execute(rev_stmt)).scalar_one_or_none() if apt_id else None
+
+        if existing_rev:
+            existing_rev.rating = rating
+            existing_rev.comment = comment
+            existing_rev.client_name = client_name
+            existing_rev.service_title = service_title
+            existing_rev.moderation_status = "APPROVED"
+            existing_rev.is_published = True
+            existing_rev.mark_updated()
+        else:
+            new_rev = Review(
+                appointment_id=apt_id,
+                client_id=client.id if client else None,
+                client_name=client_name,
+                service_title=service_title,
+                rating=rating,
+                comment=comment,
+                photo_url="",
+                tg_file_id="",
+                review_type="POST_VISIT",
+                moderation_status="APPROVED",
+                is_published=True
+            )
+            db.add(new_rev)
+
+        await db.commit()
+
+        # Notify masters/owners
+        from app.bot.bot_instance import bot
+        if bot:
+            owner_stmt = select(Master).where(
+                Master.role.in_(["owner", "master"]),
+                Master.deleted.is_(False),
+                Master.telegram_chat_id.isnot(None)
+            )
+            masters = (await db.execute(owner_stmt)).scalars().all()
+            alert_msg = (
+                f"⭐ <b>Новий відгук від клієнта!</b>\n\n"
+                f"👤 Клієнт: <b>{html.escape(client_name)}</b>\n"
+                f"💅 Послуга: <b>{html.escape(service_title)}</b>\n"
+                f"⭐ Оцінка: <b>{rating}/5</b> {'⭐' * rating}\n"
+                f"💬 Відгук: «{html.escape(comment or 'Без коментаря')}»"
+            )
+            for m in masters:
+                if m.telegram_chat_id:
+                    try:
+                        await bot.send_message(chat_id=m.telegram_chat_id, text=alert_msg, parse_mode="HTML")
+                    except Exception as e:
+                        logger.warning("Failed to notify master of review: %s", e)
+
+    await state.clear()
+    await callback.message.edit_text(
+        f"❤️ <b>Дякуємо за ваш відгук та високу оцінку {rating} ⭐!</b>\n"
+        f"Ми безмежно раді робити ваші нігтики бездоганними! До нових зустрічей у JuNails!",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+# =====================================================================
+# FLOW B: 2-WEEK WEAR REMINDER — TEXT -> NAIL PHOTO -> CONDITIONAL BOOKING
+# =====================================================================
+@client_router.callback_query(F.data.startswith("wear_start:") | F.data.startswith("wear_fb:"))
+async def process_wear_check_start(callback: CallbackQuery, state: FSMContext) -> None:
+    apt_id = callback.data.split(":")[1]
+    await state.update_data(wear_apt_id=apt_id)
+    await state.set_state(ReviewStates.waiting_for_wear_text)
+    await callback.message.answer(
+        "💬 <b>Крок 1 із 2:</b> Напишіть текстом, як носиться покриття (чи є сколи, відшарування або дискомфорт)?",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@client_router.message(ReviewStates.waiting_for_wear_text, F.text)
+async def process_wear_check_text(message: Message, state: FSMContext) -> None:
+    wear_comment = message.text.strip()
+    await state.update_data(wear_comment=wear_comment)
+    await state.set_state(ReviewStates.waiting_for_wear_photo)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏩ Зберегти без фото", callback_data="wear_nophoto")]
+    ])
+    await message.answer(
+        "📸 <b>Крок 2 із 2:</b> Надішліть, будь ласка, <b>фото стану ваших нігтиків зараз</b> (як виглядає покриття):\n\n"
+        "<i>Якщо не маєте змоги сфотографувати зараз — просто натисніть кнопку нижче:</i>",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+async def finalize_wear_report(
+    user_id: int,
+    apt_id: Optional[str],
+    wear_comment: str,
+    photo_file_id: Optional[str],
+    photo_bytes: Optional[bytes],
+    bot_ref: Any
+) -> tuple[str, Optional[InlineKeyboardMarkup]]:
+    today_str = get_kyiv_today()
+    photo_url = ""
+
+    if photo_bytes:
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(photo_bytes))
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((800, 800))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=75, optimize=True)
+            comp = buf.getvalue()
+        except Exception:
+            comp = photo_bytes
+        photo_url = f"data:image/jpeg;base64,{base64.b64encode(comp).decode('ascii')}"
+
+    async with AsyncSessionLocal() as db:
+        c_res = await db.execute(select(Client).where(Client.telegram_id == user_id))
+        client = c_res.scalar_one_or_none()
+
+        apt = await db.get(Appointment, apt_id) if apt_id else None
+        if not client and apt:
+            client = await db.get(Client, apt.client_id)
+
+        client_name = client.first_name if client else "Клієнт"
+        client_phone = client.phone if client else ""
+        service_title = "Манікюр"
+        if apt and apt.service_id:
+            srv = await db.get(Service, apt.service_id)
+            if srv:
+                service_title = srv.title
+
+        rev = Review(
+            appointment_id=apt_id,
+            client_id=client.id if client else None,
+            client_name=client_name,
+            service_title=service_title,
+            rating=5,
+            comment=wear_comment,
+            photo_url=photo_url,
+            tg_file_id=photo_file_id or "",
+            review_type="WEAR_2WEEKS",
+            moderation_status="APPROVED",
+            is_published=True
+        )
+        db.add(rev)
+
+        # Update VisitBrief photo if apt_id exists
+        if apt_id:
+            vb_res = await db.execute(select(VisitBrief).where(VisitBrief.appointment_id == apt_id))
+            vb = vb_res.scalar_one_or_none()
+            if vb:
+                vb.coating_condition = wear_comment
+                if photo_url:
+                    vb.photo_after_url = photo_url
+                vb.mark_updated()
+
+        await db.commit()
+
+        # Forward wear check to active masters/owner
+        if bot_ref and client:
+            owner_stmt = select(Master).where(
+                Master.role.in_(["owner", "master"]),
+                Master.deleted.is_(False),
+                Master.telegram_chat_id.isnot(None)
+            )
+            masters = (await db.execute(owner_stmt)).scalars().all()
+            alert_caption = (
+                f"📸 <b>Звіт про носіння покриття (2 тижні)!</b>\n\n"
+                f"👤 Клієнт: <b>{html.escape(client_name)}</b> ({html.escape(client_phone)})\n"
+                f"💅 Послуга: <b>{html.escape(service_title)}</b>\n"
+                f"💬 Відгук: {html.escape(wear_comment or 'Все добре')}"
+            )
+            for m in masters:
+                if m.telegram_chat_id:
+                    try:
+                        if photo_file_id:
+                            await bot_ref.send_photo(
+                                chat_id=m.telegram_chat_id,
+                                photo=photo_file_id,
+                                caption=alert_caption,
+                                parse_mode="HTML"
+                            )
+                        else:
+                            await bot_ref.send_message(
+                                chat_id=m.telegram_chat_id,
+                                text=alert_caption,
+                                parse_mode="HTML"
+                            )
+                    except Exception as e:
+                        logger.warning("Failed to forward wear report: %s", e)
+
+        # Conditional Booking Check
+        next_apt = None
+        if client:
+            fut_stmt = (
+                select(Appointment)
+                .options(selectinload(Appointment.service))
+                .where(
+                    Appointment.client_id == client.id,
+                    Appointment.date >= today_str,
+                    Appointment.status.in_(["PENDING", "CONFIRMED"]),
+                    Appointment.deleted.is_(False)
+                )
+                .order_by(Appointment.date.asc(), Appointment.start_time.asc())
+            )
+            next_apt = (await db.execute(fut_stmt)).scalars().first()
+
+        if next_apt:
+            srv_name = next_apt.service.title if next_apt.service else "манікюр"
+            reply_msg = (
+                f"❤️ <b>Дякуємо! Ваш звіт про носіння збережено.</b>\n\n"
+                f"📅 Нагадуємо, що ваш наступний візит уже заплановано на <b>{next_apt.date} о {next_apt.start_time}</b> "
+                f"(«{html.escape(srv_name)}»)! Чекаємо на вас! 🥰"
+            )
+            return reply_msg, None
+        else:
+            reply_msg = (
+                f"❤️ <b>Дякуємо! Ваш звіт про носіння збережено.</b>\n\n"
+                f"💅 <b>Зверніть увагу:</b> у вас ще немає запису на корекцію/оновлення. "
+                f"Щоб обрати найзручніший для вас час, поки є вільні віконця — запишіться завчасно:"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💅 Записатися завчасно", callback_data="m:book")]
+            ])
+            return reply_msg, kb
+
+
+@client_router.message(ReviewStates.waiting_for_wear_photo, F.photo)
+async def process_wear_photo_uploaded(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    apt_id = data.get("wear_apt_id")
+    wear_comment = data.get("wear_comment", "")
+    photo = message.photo[-1]
+    photo_file_id = photo.file_id
+
+    buf = io.BytesIO()
+    await message.bot.download(photo, destination=buf)
+    raw_bytes = buf.getvalue()
+
+    reply_msg, kb = await finalize_wear_report(
+        user_id=message.from_user.id if message.from_user else 0,
+        apt_id=apt_id,
+        wear_comment=wear_comment,
+        photo_file_id=photo_file_id,
+        photo_bytes=raw_bytes,
+        bot_ref=message.bot
+    )
+    await state.clear()
+    await message.answer(reply_msg, reply_markup=kb, parse_mode="HTML")
+
+
+@client_router.callback_query(F.data == "wear_nophoto")
+async def process_wear_no_photo_click(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    apt_id = data.get("wear_apt_id")
+    wear_comment = data.get("wear_comment", "")
+
+    reply_msg, kb = await finalize_wear_report(
+        user_id=callback.from_user.id if callback.from_user else 0,
+        apt_id=apt_id,
+        wear_comment=wear_comment,
+        photo_file_id=None,
+        photo_bytes=None,
+        bot_ref=callback.bot
+    )
+    await state.clear()
+    await callback.message.edit_text(reply_msg, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+# =====================================================================
+# DEDICATED "ALL REVIEWS" WINDOW (CLIENT INLINE MENU & PAGINATION)
+# =====================================================================
+@client_router.callback_query(F.data.startswith("m:reviews"))
+async def process_client_all_reviews(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    page_size = 3
+
+    async with AsyncSessionLocal() as db:
+        rev_stmt = (
+            select(Review)
+            .where(
+                Review.is_published.is_(True),
+                Review.moderation_status == "APPROVED",
+                Review.deleted.is_(False)
+            )
+            .order_by(Review.created_at.desc())
+        )
+        all_revs = (await db.execute(rev_stmt)).scalars().all()
+
+    total_count = len(all_revs)
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = min(page, total_pages - 1)
+
+    start_idx = page * page_size
+    current_page_revs = all_revs[start_idx : start_idx + page_size]
+
+    text = f"⭐ <b>Відгуки наших клієнтів (сторінка {page + 1}/{total_pages}):</b>\n\n"
+    if not current_page_revs:
+        text += "<i>Поки що немає відгуків. Будьте першими, хто залишить враження! 💖</i>\n"
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+
+    for r in current_page_revs:
+        type_badge = "💅 [Після візиту]" if r.review_type == "POST_VISIT" else "✨ [Через 2 тижні]"
+        stars_str = "⭐" * r.rating
+        c_name = r.client_name or "Клієнт"
+        s_title = r.service_title or "Послуга студії"
+        comment_text = r.comment or "Чудовий результат та ідеальний манікюр!"
+
+        text += (
+            f"👤 <b>{html.escape(c_name)}</b> {type_badge}\n"
+            f"💅 <i>{html.escape(s_title)}</i> | {stars_str}\n"
+            f"💬 «{html.escape(comment_text)}»\n\n"
+        )
+        if r.tg_file_id:
+            keyboard_rows.append([
+                InlineKeyboardButton(
+                    text=f"📸 Фото нігтів від {c_name}",
+                    callback_data=f"rev_pic:{r.id}"
+                )
+            ])
+
+    # Pagination navigation
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="◀️ Попередня", callback_data=f"m:reviews:{page - 1}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="Наступна ▶️", callback_data=f"m:reviews:{page + 1}"))
+    if nav_row:
+        keyboard_rows.append(nav_row)
+
+    keyboard_rows.append([
+        InlineKeyboardButton(text="💅 Записатися онлайн", callback_data="m:book"),
+        InlineKeyboardButton(text="« Головне меню", callback_data="m:main"),
+    ])
+
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@client_router.callback_query(F.data.startswith("rev_pic:"))
+async def process_show_review_photo(callback: CallbackQuery) -> None:
+    rev_id = callback.data.split(":")[1]
+    async with AsyncSessionLocal() as db:
+        rev = await db.get(Review, rev_id)
+        if not rev or not rev.tg_file_id:
+            await callback.answer("Фото відсутнє або не збереглося.", show_alert=True)
+            return
+
+        caption = (
+            f"📸 <b>Фото покриття від {html.escape(rev.client_name or 'клієнта')}</b>\n"
+            f"⭐ {rev.rating}/5 — {html.escape(rev.service_title or 'Манікюр')}\n"
+            f"«{html.escape(rev.comment or '')}»"
+        )
+        try:
+            await callback.message.answer_photo(
+                photo=rev.tg_file_id,
+                caption=caption,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.warning("Failed to show review photo: %s", e)
+            await callback.answer("Не вдалося відкрити фото.", show_alert=True)
+
+    await callback.answer()
+
+
+# =====================================================================
+# BACKWARD COMPATIBILITY HANDLERS (LEGACY CALLBACKS & COMMENTS)
+# =====================================================================
 @client_router.callback_query(F.data.startswith("review_"))
-async def process_review_score(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_review_score_legacy(callback: CallbackQuery, state: FSMContext) -> None:
     parts = callback.data.split("_")
     apt_id = parts[1]
     score = int(parts[2])
@@ -1189,13 +1613,19 @@ async def process_review_score(callback: CallbackQuery, state: FSMContext) -> No
             await callback.answer("Запис не знайдено.", show_alert=True)
             return
 
+        c = await db.get(Client, apt.client_id) if apt.client_id else None
+        s = await db.get(Service, apt.service_id) if apt.service_id else None
+
         rev = Review(
             appointment_id=apt_id,
             client_id=apt.client_id,
+            client_name=c.first_name if c else "Клієнт",
+            service_title=s.title if s else "Манікюр",
             rating=score,
             comment="",
-            moderation_status="PENDING",
-            is_published=False,
+            review_type="POST_VISIT",
+            moderation_status="APPROVED",
+            is_published=True,
         )
         db.add(rev)
         await db.commit()
@@ -1213,76 +1643,27 @@ async def process_review_score(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @client_router.message(ReviewStates.waiting_for_comment, F.photo)
-async def process_review_photo(message: Message, state: FSMContext) -> None:
+async def process_review_photo_legacy(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     rev_id = data.get("review_id")
-    apt_id = data.get("wear_apt_id")
     caption = message.caption or "Фото стану покриття"
     photo_file_id = message.photo[-1].file_id
 
     async with AsyncSessionLocal() as db:
-        tg_id = message.from_user.id if message.from_user else 0
-        c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id))
-        client = c_res.scalar_one_or_none()
-
         if rev_id:
             rev = await db.get(Review, rev_id)
             if rev:
                 rev.comment = caption
+                rev.tg_file_id = photo_file_id
                 rev.mark_updated()
-        elif apt_id and client:
-            rev = Review(
-                appointment_id=apt_id,
-                client_id=client.id,
-                rating=5,
-                comment=caption,
-                moderation_status="APPROVED",
-                is_published=True
-            )
-            db.add(rev)
-
-        # Update VisitBrief photo if apt_id is present
-        if apt_id:
-            vb_res = await db.execute(select(VisitBrief).where(VisitBrief.appointment_id == apt_id))
-            vb = vb_res.scalar_one_or_none()
-            if vb:
-                vb.photo_after_url = f"tg_photo_{photo_file_id}"
-                vb.mark_updated()
-
-        await db.commit()
-
-        # Forward photo to Master/Owner
-        from app.bot.bot_instance import bot
-        if bot and client:
-            owner_stmt = select(Master).where(
-                Master.role == "owner",
-                Master.deleted.is_(False),
-                Master.telegram_chat_id.isnot(None)
-            )
-            owners = (await db.execute(owner_stmt)).scalars().all()
-            alert_caption = (
-                f"📸 <b>Фото стану покриття від клієнта!</b>\n\n"
-                f"👤 Клієнт: <b>{html.escape(client.first_name)}</b> ({html.escape(client.phone)})\n"
-                f"💬 Коментар: {html.escape(caption)}"
-            )
-            for owner in owners:
-                if owner.telegram_chat_id:
-                    try:
-                        await bot.send_photo(
-                            chat_id=owner.telegram_chat_id,
-                            photo=photo_file_id,
-                            caption=alert_caption,
-                            parse_mode="HTML"
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to forward wear check photo: %s", e)
+                await db.commit()
 
     await state.clear()
     await message.answer("❤️ <b>Дякуємо за фото та відгук!</b> Майстер уже бачить ваш результат.", parse_mode="HTML")
 
 
 @client_router.message(ReviewStates.waiting_for_comment, F.text)
-async def process_review_comment(message: Message, state: FSMContext) -> None:
+async def process_review_comment_legacy(message: Message, state: FSMContext) -> None:
     comment = message.text.strip()
     data = await state.get_data()
     rev_id = data.get("review_id")
