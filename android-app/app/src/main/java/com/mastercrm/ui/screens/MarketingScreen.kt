@@ -934,6 +934,8 @@ fun MarketingStudioScreen(
                         }
                     }
                 }
+            }
+
             StoryMode.ALL_REVIEWS_LIST -> {
                 item {
                     Text(
