@@ -73,6 +73,11 @@ interface ApiService {
         @Body body: Map<String, Any?>
     ): ApiResponse<ReminderTemplateDto>
 
+    @POST("exec?action=reminder_templates_get")
+    suspend fun getReminderTemplates(
+        @Body body: Map<String, Any?> = emptyMap()
+    ): ApiResponse<List<ReminderTemplateDto>>
+
     @POST("exec?action=clean_demo_data")
     suspend fun cleanDemoData(): ApiResponse<Map<String, Any>>
 

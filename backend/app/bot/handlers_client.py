@@ -1217,11 +1217,34 @@ async def process_post_review_text(message: Message, state: FSMContext) -> None:
     await state.update_data(review_comment=comment)
     await state.set_state(ReviewStates.waiting_for_post_review_stars)
 
-    from app.scheduler.tasks import render_bot_template
-    def_stars = "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️\n\n✨ Оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:"
-    async with AsyncSessionLocal() as db:
-        stars_text = await render_bot_template(db, "REVIEW_10MIN_STARS_ASK", def_stars)
+    c_name = message.from_user.first_name if message.from_user else "Клієнт"
+    data = await state.get_data()
+    apt_id = data.get("review_apt_id")
+    s_title = "процедуру"
 
+    from app.scheduler.tasks import render_bot_template
+    def_auto_reply = "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️"
+    def_stars = "✨ А тепер оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:"
+
+    async with AsyncSessionLocal() as db:
+        if apt_id:
+            apt = await db.get(Appointment, apt_id)
+            if apt:
+                if apt.client_id:
+                    cl = await db.get(Client, apt.client_id)
+                    if cl and cl.first_name:
+                        c_name = cl.first_name
+                if apt.service_id:
+                    srv = await db.get(Service, apt.service_id)
+                    if srv:
+                        s_title = srv.title
+
+        auto_reply_text = await render_bot_template(db, "REVIEW_10MIN_AUTO_REPLY", def_auto_reply, name=c_name, service=s_title)
+        stars_text = await render_bot_template(db, "REVIEW_10MIN_STARS_ASK", def_stars, name=c_name, service=s_title)
+
+    # 1. Тепла авто-відповідь студії на надісланий текст відгуку
+    await message.answer(auto_reply_text, parse_mode="HTML")
+    # 2. Окреме повідомлення із запитом оцінки та кнопками зірочок 1..5
     await message.answer(
         stars_text,
         reply_markup=get_post_review_stars_keyboard(),

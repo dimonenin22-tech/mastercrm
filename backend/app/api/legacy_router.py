@@ -1748,6 +1748,11 @@ async def unified_exec(
         await db.refresh(tmpl)
         return ApiResponse.ok(ReminderTemplateDto.model_validate(tmpl).model_dump())
 
+    # Action: reminder_templates_get
+    if action == "reminder_templates_get":
+        tmpls = (await db.execute(select(ReminderTemplate).where(ReminderTemplate.deleted.is_(False)))).scalars().all()
+        return ApiResponse.ok([ReminderTemplateDto.model_validate(t).model_dump(mode="json") for t in tmpls])
+
     # 21. Action: clean_demo_data
     if action == "clean_demo_data":
         if current_master.role != "owner":

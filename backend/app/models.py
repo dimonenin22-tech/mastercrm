@@ -398,7 +398,7 @@ class Supplier(Base, BaseMixin):
 class ReminderTemplate(Base, BaseMixin):
     __tablename__ = "reminder_templates"
 
-    type: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)  # WELCOME, REMINDER_24H, REMINDER_2H, REVIEW_10MIN, REVIEW_2WEEKS
+    type: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)  # REMINDER_24H, REMINDER_2H, REVIEW_10MIN_TEXT_ASK, REVIEW_10MIN_AUTO_REPLY, REVIEW_10MIN_STARS_ASK, WEAR_2WEEKS_TEXT_ASK, WEAR_2WEEKS_PHOTO_ASK, WEAR_2WEEKS_FINAL_BOOK_OFFER
     template_text: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
