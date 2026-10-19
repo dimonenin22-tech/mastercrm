@@ -785,7 +785,7 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
         f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
         f"📅 <b>Дата:</b> {date_str}\n"
         f"⏰ <b>Час:</b> {start_time}\n"
-        f"💰 <b>До сплати:</b> {int(s_price)} ₴\n\n"
+        f"💰 <b>Вартість послуги:</b> {int(s_price)} ₴\n\n"
         f"Будь ласка, перевірте дані та підтвердіть запис:"
     )
     if is_callback:
@@ -1189,11 +1189,25 @@ async def process_post_review_start(callback: CallbackQuery, state: FSMContext) 
     apt_id = callback.data.split(":")[1]
     await state.update_data(review_apt_id=apt_id)
     await state.set_state(ReviewStates.waiting_for_post_review_text)
-    await callback.message.answer(
-        "✍️ <b>Напишіть, будь ласка, ваш текстовий відгук:</b>\n"
-        "Як вам якість послуги, форма нігтів та атмосфера?",
-        parse_mode="HTML"
-    )
+
+    from app.scheduler.tasks import render_bot_template
+    c_name = "Клієнт"
+    s_title = "процедуру"
+    async with AsyncSessionLocal() as db:
+        apt = await db.get(Appointment, apt_id)
+        if apt:
+            if apt.client_id:
+                cl = await db.get(Client, apt.client_id)
+                if cl:
+                    c_name = cl.first_name
+            if apt.service_id:
+                srv = await db.get(Service, apt.service_id)
+                if srv:
+                    s_title = srv.title
+        def_prompt = f"💖 Дякуємо за візит, {c_name}! Як вам результат процедури «{s_title}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:"
+        prompt_text = await render_bot_template(db, "REVIEW_10MIN_TEXT_ASK", def_prompt, name=c_name, service=s_title)
+
+    await callback.message.answer(prompt_text, parse_mode="HTML")
     await callback.answer()
 
 
@@ -1202,8 +1216,14 @@ async def process_post_review_text(message: Message, state: FSMContext) -> None:
     comment = message.text.strip()
     await state.update_data(review_comment=comment)
     await state.set_state(ReviewStates.waiting_for_post_review_stars)
+
+    from app.scheduler.tasks import render_bot_template
+    def_stars = "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️\n\n✨ Оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:"
+    async with AsyncSessionLocal() as db:
+        stars_text = await render_bot_template(db, "REVIEW_10MIN_STARS_ASK", def_stars)
+
     await message.answer(
-        "⭐ <b>Чудово! А тепер оберіть вашу оцінку від 1 до 5 зірочок:</b>",
+        stars_text,
         reply_markup=get_post_review_stars_keyboard(),
         parse_mode="HTML"
     )
@@ -1305,10 +1325,25 @@ async def process_wear_check_start(callback: CallbackQuery, state: FSMContext) -
     apt_id = callback.data.split(":")[1]
     await state.update_data(wear_apt_id=apt_id)
     await state.set_state(ReviewStates.waiting_for_wear_text)
-    await callback.message.answer(
-        "💬 <b>Крок 1 із 2:</b> Напишіть текстом, як носиться покриття (чи є сколи, відшарування або дискомфорт)?",
-        parse_mode="HTML"
-    )
+
+    from app.scheduler.tasks import render_bot_template
+    c_name = "Клієнт"
+    s_title = "манікюр"
+    async with AsyncSessionLocal() as db:
+        apt = await db.get(Appointment, apt_id)
+        if apt:
+            if apt.client_id:
+                cl = await db.get(Client, apt.client_id)
+                if cl:
+                    c_name = cl.first_name
+            if apt.service_id:
+                srv = await db.get(Service, apt.service_id)
+                if srv:
+                    s_title = srv.title
+        def_prompt = f"💅 Привіт, {c_name}! Минуло 2 тижні з вашого візиту («{s_title}»). Напишіть, будь ласка, як носиться покриття? Чи все тримається ідеально?"
+        prompt_text = await render_bot_template(db, "WEAR_2WEEKS_TEXT_ASK", def_prompt, name=c_name, service=s_title)
+
+    await callback.message.answer(prompt_text, parse_mode="HTML")
     await callback.answer()
 
 
@@ -1320,9 +1355,12 @@ async def process_wear_check_text(message: Message, state: FSMContext) -> None:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⏩ Зберегти без фото", callback_data="wear_nophoto")]
     ])
+    from app.scheduler.tasks import render_bot_template
+    def_photo = "📸 Дякуємо за відповідь! А тепер надішліть, будь ласка, у цей чат фото стану ваших нігтів зараз (або натисніть кнопку нижче, щоб продовжити без фото):"
+    async with AsyncSessionLocal() as db:
+        photo_prompt = await render_bot_template(db, "WEAR_2WEEKS_PHOTO_ASK", def_photo)
     await message.answer(
-        "📸 <b>Крок 2 із 2:</b> Надішліть, будь ласка, <b>фото стану ваших нігтиків зараз</b> (як виглядає покриття):\n\n"
-        "<i>Якщо не маєте змоги сфотографувати зараз — просто натисніть кнопку нижче:</i>",
+        photo_prompt,
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -1454,13 +1492,11 @@ async def finalize_wear_report(
             )
             return reply_msg, None
         else:
-            reply_msg = (
-                f"❤️ <b>Дякуємо! Ваш звіт про носіння збережено.</b>\n\n"
-                f"💅 <b>Зверніть увагу:</b> у вас ще немає запису на корекцію/оновлення. "
-                f"Щоб обрати найзручніший для вас час, поки є вільні віконця — запишіться завчасно:"
-            )
+            from app.scheduler.tasks import render_bot_template
+            def_offer = "💖 Дякуємо за ваш звіт та фото! Настав час планувати наступну корекцію — оберіть зручне віконце завчасно за кнопкою нижче:"
+            reply_msg = await render_bot_template(db, "WEAR_2WEEKS_FINAL_BOOK_OFFER", def_offer)
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💅 Записатися завчасно", callback_data="m:book")]
+                [InlineKeyboardButton(text="💅 Записатися на корекцію", callback_data="m:book")]
             ])
             return reply_msg, kb
 

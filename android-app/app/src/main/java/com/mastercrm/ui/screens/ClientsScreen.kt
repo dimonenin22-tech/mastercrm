@@ -3,6 +3,7 @@ package com.mastercrm.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -393,28 +394,85 @@ fun ClientDetailBottomSheet(
         ) {
             // Header Profile Card
             item {
+                val isDanger = client.visitsSinceLastRemoval >= 3
                 ElevatedCard(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // Top Profile Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = client.firstName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "${client.firstName} ${client.lastName ?: ""}".trim(),
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Text(
-                                    text = "📞 ${client.phone}",
-                                    color = Color.Gray,
-                                    fontSize = 13.sp
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        val norm = normalizeUkrainianPhone(client.phone)
+                                        if (norm.isNotEmpty()) {
+                                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:+$norm"))
+                                            context.startActivity(intent)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Phone,
+                                        contentDescription = "Телефон",
+                                        tint = RosePrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (client.phone.startsWith("+")) client.phone else "+${client.phone}",
+                                        color = RosePrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            if (client.telegramId != null) {
+                                Surface(
+                                    color = Color(0xFFE3F2FD),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.padding(end = 4.dp)
+                                ) {
+                                    Text(
+                                        "TG ✓",
+                                        color = Color(0xFF1976D2),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
 
                             IconButton(onClick = onToggleBlacklist) {
@@ -426,49 +484,79 @@ fun ClientDetailBottomSheet(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
+                        // Middle Metrics Row (Two Equal Pills)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("LTV: ${client.totalSpent.toInt()} ₴") }
-                            )
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("Візитів: ${client.totalVisits}") }
-                            )
-                            if (client.discountPercent > 0) {
-                                AssistChip(
-                                    onClick = {},
-                                    label = { Text("Знижка: -${client.discountPercent}%") }
-                                )
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        "Усього витрачено (LTV)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        "${client.totalSpent.toInt()} ₴",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        "Кількість візитів",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        "${client.totalVisits}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Removal Counter Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        // Bottom Removal Counter Banner
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDanger) Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
+                            border = BorderStroke(1.dp, if (isDanger) Color(0xFFFFCDD2) else Color(0xFFC8E6C9)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            val alertColor = if (client.visitsSinceLastRemoval >= 3) Color(0xFFD32F2F) else Color(0xFF388E3C)
-                            Text(
-                                text = "Без повного зняття: ${client.visitsSinceLastRemoval} візитів",
-                                color = alertColor,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            )
-                            if (client.visitsSinceLastRemoval > 0) {
-                                OutlinedButton(
-                                    onClick = onResetRemoval,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Скинути зняття", fontSize = 11.sp)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🔄 Без зняття: ${client.visitsSinceLastRemoval} з 3",
+                                    color = if (isDanger) Color(0xFFD32F2F) else Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
+                                if (client.visitsSinceLastRemoval > 0) {
+                                    FilledTonalButton(
+                                        onClick = onResetRemoval,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Скинути", fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }

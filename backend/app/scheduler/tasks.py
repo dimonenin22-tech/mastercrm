@@ -17,6 +17,7 @@ from app.models import (
     Appointment,
     Client,
     NotificationLog,
+    ReminderTemplate,
     Service,
     WaitingList,
     utc_now,
@@ -24,6 +25,13 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone(settings.TIMEZONE))
+
+
+async def render_bot_template(db, key: str, default_text: str, name: str = "", date: str = "", time: str = "", service: str = "") -> str:
+    stmt = select(ReminderTemplate).where(ReminderTemplate.type == key, ReminderTemplate.deleted.is_(False))
+    tmpl = (await db.execute(stmt)).scalar_one_or_none()
+    text = (tmpl.template_text if tmpl and tmpl.template_text else default_text)
+    return text.replace("{name}", name).replace("{date}", date).replace("{time}", time).replace("{service}", service)
 
 
 def get_kyiv_now() -> datetime:
@@ -143,12 +151,14 @@ async def send_24h_and_2h_reminders() -> None:
                         "Рекомендуємо сьогодні зробити повне зняття, щоб дати нігтьовій пластині оновитися і зберегти здоров'я нігтів! 💅"
                     )
 
-                text = (
-                    f"🔔 <b>Нагадування про візит завтра!</b>\n\n"
-                    f"Чекаємо на вас: <b>{apt.date} о {apt.start_time}</b>\n"
-                    f"💅 Послуга: <b>{html.escape(s_title)}</b>{advice}\n\n"
-                    f"Якщо ваші плани змінилися, будь ласка, попередьте заздалегідь через меню /start."
+                c_name = apt.client.first_name if apt.client else "Клієнт"
+                def_24h = f"🔔 Привіт, {c_name}! Нагадуємо про ваш запис завтра ({apt.date}) о {apt.start_time} на послугу «{s_title}». Чекаємо на вас!{advice}"
+                text = await render_bot_template(
+                    db, "REMINDER_24H", def_24h,
+                    name=c_name, date=apt.date, time=apt.start_time, service=s_title
                 )
+                if advice and "{name}" in text and advice not in text:
+                    text += advice
 
                 log = NotificationLog(
                     appointment_id=apt.id,
@@ -166,10 +176,11 @@ async def send_24h_and_2h_reminders() -> None:
 
             # 2h reminder (between 1h 45m and 2h 15m)
             if timedelta(minutes=105) <= time_diff <= timedelta(minutes=135) and "2h" not in already_sent:
-                text = (
-                    f"⏰ <b>Нагадуємо: до вашого візиту залишилося 2 години!</b>\n\n"
-                    f"Сьогодні о <b>{apt.start_time}</b> чекаємо на вас на «{html.escape(s_title)}».\n"
-                    f"Гарного дня та до зустрічі! ☕️✨"
+                c_name = apt.client.first_name if apt.client else "Клієнт"
+                def_2h = f"⏰ Привіт, {c_name}! Нагадуємо, що ваш візит на «{s_title}» відбудеться вже сьогодні через 2 години — о {apt.start_time}!"
+                text = await render_bot_template(
+                    db, "REMINDER_2H", def_2h,
+                    name=c_name, date=apt.date, time=apt.start_time, service=s_title
                 )
 
                 log = NotificationLog(
@@ -225,9 +236,12 @@ async def send_post_visit_and_14day_checks() -> None:
                 )
                 db.add(log)
                 if bot:
-                    msg = (
-                        f"💅 <b>Дякуємо за візит до нашої студії!</b>\n\n"
-                        f"Як вам якість послуги та атмосфера? Поділіться, будь ласка, своїми враженнями:"
+                    c_name = apt.client.first_name if apt.client else "Клієнт"
+                    srv_t = apt.service.title if apt.service else "манікюр"
+                    def_10m = f"💖 Дякуємо за візит, {c_name}! Як вам результат процедури «{srv_t}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:"
+                    msg = await render_bot_template(
+                        db, "REVIEW_10MIN_TEXT_ASK", def_10m,
+                        name=c_name, date=apt.date, time=apt.start_time, service=srv_t
                     )
                     try:
                         await bot.send_message(
@@ -265,10 +279,11 @@ async def send_post_visit_and_14day_checks() -> None:
                 already_sent = {n.reminder_type for n in apt.notifications if n.status == "SUCCESS"}
                 if "2weeks_review" not in already_sent:
                     service_title = apt.service.title if apt.service else "манікюр"
-
-                    msg = (
-                        f"💅 <b>Минуло 2 тижні з вашого візиту ({html.escape(service_title)})!</b>\n"
-                        f"Будь ласка, розкажіть, як носиться ваше покриття та чи все чудово:"
+                    c_name = apt.client.first_name if apt.client else "Клієнт"
+                    def_14d = f"💅 Привіт, {c_name}! Минуло 2 тижні з вашого візиту («{service_title}»). Напишіть, будь ласка, як носиться покриття? Чи все тримається ідеально?"
+                    msg = await render_bot_template(
+                        db, "WEAR_2WEEKS_TEXT_ASK", def_14d,
+                        name=c_name, date=apt.date, time=apt.start_time, service=service_title
                     )
 
                     log = NotificationLog(

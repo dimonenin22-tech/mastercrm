@@ -64,8 +64,9 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedSettingsTab,
+                edgePadding = 12.dp,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = RosePrimary
             ) {
@@ -73,7 +74,14 @@ fun SettingsScreen(
                     Tab(
                         selected = selectedSettingsTab == index,
                         onClick = { selectedSettingsTab = index },
-                        text = { Text(title, fontWeight = if (selectedSettingsTab == index) FontWeight.Bold else FontWeight.Normal) }
+                        text = {
+                            Text(
+                                title,
+                                maxLines = 1,
+                                softWrap = false,
+                                fontWeight = if (selectedSettingsTab == index) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     )
                 }
             }
@@ -924,18 +932,47 @@ fun ReminderTemplatesTab() {
 
     val templates = remember {
         mutableStateListOf(
-            TemplateItem("WELCOME", "Привітання нового клієнта", "Привіт, {name}! Раді вітати у студії MasterCRM. Ваш запис підтверджено!"),
-            TemplateItem("REMINDER_24H", "Нагадування за 24 години", "Привіт, {name}! Нагадуємо про візит завтра ({date}) о {time} на «{service}». Чекаємо на вас!"),
-            TemplateItem("REMINDER_2H", "Нагадування за 2 години", "Привіт, {name}! До зустрічі через 2 години о {time}!"),
-            TemplateItem("REVIEW_10MIN", "Запит відгуку після візиту", "Дякуємо за візит, {name}! Будь ласка, залиште короткий відгук про послугу «{service}»."),
-            TemplateItem("REVIEW_2WEEKS", "Запрошення через 2 тижні", "Привіт, {name}! Минуло 2 тижні з останнього візиту. Час оновити манікюр!")
+            TemplateItem(
+                "REMINDER_24H",
+                "1. Нагадування про запис за 24 години",
+                "🔔 Привіт, {name}! Нагадуємо про ваш запис завтра ({date}) о {time} на послугу «{service}». Чекаємо на вас!"
+            ),
+            TemplateItem(
+                "REMINDER_2H",
+                "2. Нагадування про запис за 2 години",
+                "⏰ Привіт, {name}! Нагадуємо, що ваш візит на «{service}» відбудеться вже сьогодні через 2 години — о {time}!"
+            ),
+            TemplateItem(
+                "REVIEW_10MIN_TEXT_ASK",
+                "3. Запит відгуку через 10 хв після візиту (Крок 1: Текст)",
+                "💖 Дякуємо за візит, {name}! Як вам результат процедури «{service}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:"
+            ),
+            TemplateItem(
+                "REVIEW_10MIN_STARS_ASK",
+                "4. Запит оцінки зірочок 1..5 + Авто-відповідь (Крок 2)",
+                "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️\n\n✨ Оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:"
+            ),
+            TemplateItem(
+                "WEAR_2WEEKS_TEXT_ASK",
+                "5. Запит про носку через 2 тижні (Крок 1: Текст)",
+                "💅 Привіт, {name}! Минуло 2 тижні з вашого візиту («{service}»). Напишіть, будь ласка, як носиться покриття? Чи все тримається ідеально?"
+            ),
+            TemplateItem(
+                "WEAR_2WEEKS_PHOTO_ASK",
+                "6. Запит фото нігтів через 2 тижні (Крок 2: Фото)",
+                "📸 Дякуємо за відповідь! А тепер надішліть, будь ласка, у цей чат фото стану ваших нігтів зараз (або натисніть кнопку нижче, щоб продовжити без фото):"
+            ),
+            TemplateItem(
+                "WEAR_2WEEKS_FINAL_BOOK_OFFER",
+                "7. Відповідь після звіту + Пропозиція записатися",
+                "💖 Дякуємо за ваш звіт та фото! Настав час планувати наступну корекцію — оберіть зручне віконце завчасно за кнопкою нижче:"
+            )
         )
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp, start = 16.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {

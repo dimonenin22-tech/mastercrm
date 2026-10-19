@@ -867,6 +867,9 @@ async def unified_exec(
         if not apt:
             return ApiResponse.fail("NOT_FOUND", "Запис не знайдено")
 
+        if apt.status == "COMPLETED":
+            return ApiResponse.fail("LOCKED", "Запис вже виконано та закрито для змін")
+
         old_status = apt.status
         apt.status = new_status
         if reason:
@@ -964,6 +967,29 @@ async def unified_exec(
         if new_status in ["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"] and old_status not in ["CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER"]:
             srv_title = apt.service.title if apt.service else "Процедура"
             await notify_waiting_list_clients(db, apt.date, srv_title)
+
+        # Telegram notification to client on status update from master app
+        if old_status != new_status and new_status in ["CONFIRMED", "CANCELLED_BY_MASTER"]:
+            if apt.client and apt.client.telegram_id:
+                try:
+                    from app.bot.bot_instance import bot
+                    if bot:
+                        s_title = apt.service.title if apt.service else "Процедура"
+                        if new_status == "CONFIRMED":
+                            c_msg = (
+                                f"🎉 <b>Ваш запис підтверджено майстром!</b>\n\n"
+                                f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
+                                f"📅 <b>Дата та час:</b> {apt.date} о {apt.start_time}\n\n"
+                                f"Чекаємо на вас! 💖"
+                            )
+                        else:
+                            c_msg = (
+                                f"😔 На жаль, майстер не зможе прийняти вас {apt.date} о {apt.start_time}. "
+                                f"Будь ласка, оберіть інший зручний час у меню /start."
+                            )
+                        await bot.send_message(chat_id=apt.client.telegram_id, text=c_msg, parse_mode="HTML")
+                except Exception as tg_err:
+                    logger.warning("Failed to send status notification to client: %s", tg_err)
 
         await db.commit()
         await db.refresh(apt)

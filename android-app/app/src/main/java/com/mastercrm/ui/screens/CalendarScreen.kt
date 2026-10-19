@@ -61,6 +61,7 @@ fun CalendarScreen() {
     var isSyncing by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedAppointmentForBrief by remember { mutableStateOf<AppointmentEntity?>(null) }
+    var appointmentToComplete by remember { mutableStateOf<Triple<AppointmentEntity, String, String>?>(null) }
 
     val clientsMap = remember(clients) { clients.associateBy { it.id } }
     val servicesMap = remember(services) { services.associateBy { it.id } }
@@ -294,6 +295,13 @@ fun CalendarScreen() {
                                     )
                                 }
                             },
+                            onCompleteRequest = {
+                                appointmentToComplete = Triple(
+                                    apt,
+                                    client?.firstName ?: "Клієнт",
+                                    service?.title ?: "Послуга"
+                                )
+                            },
                             onOpenBrief = {
                                 selectedAppointmentForBrief = apt
                             }
@@ -364,6 +372,45 @@ fun CalendarScreen() {
             onSaved = { selectedAppointmentForBrief = null }
         )
     }
+
+    // Confirmation Dialog before completing appointment
+    appointmentToComplete?.let { (apt, cName, sTitle) ->
+        AlertDialog(
+            onDismissRequest = { appointmentToComplete = null },
+            title = { Text("Завершити візит клієнта?") },
+            text = {
+                Text("Ви дійсно виконали роботу для клієнта $cName ($sTitle)? Цю дію можна виконати лише 1 раз. Одразу після підтвердження відкриється анкета-дебриф по стану нігтів клієнта.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val updatedApt = apt.copy(status = "COMPLETED")
+                            app.database.appointmentDao().insertOrUpdate(updatedApt)
+                            app.syncRepository.queueMutation(
+                                action = "appointment_update_status",
+                                payload = mapOf(
+                                    "appointment_id" to apt.id,
+                                    "status" to "COMPLETED"
+                                )
+                            )
+                            val targetApt = apt
+                            appointmentToComplete = null
+                            selectedAppointmentForBrief = targetApt
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusCompleted)
+                ) {
+                    Text("✅ Так, виконано — заповнити бриф")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { appointmentToComplete = null }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -373,6 +420,7 @@ fun AppointmentCard(
     clientPhone: String,
     serviceTitle: String,
     onStatusChange: (String) -> Unit,
+    onCompleteRequest: () -> Unit,
     onOpenBrief: () -> Unit
 ) {
     val statusColor = when (appointment.status) {
@@ -380,6 +428,13 @@ fun AppointmentCard(
         "COMPLETED" -> StatusCompleted
         "CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER" -> StatusCancelled
         else -> StatusPending
+    }
+
+    val statusLabel = when (appointment.status) {
+        "CONFIRMED" -> "Підтверджено"
+        "COMPLETED" -> "Виконано"
+        "CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER" -> "Скасовано"
+        else -> "Очікує"
     }
 
     Card(
@@ -405,7 +460,7 @@ fun AppointmentCard(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = appointment.status,
+                        text = statusLabel,
                         color = statusColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
@@ -429,26 +484,86 @@ fun AppointmentCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onOpenBrief) {
-                    Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Бриф", fontSize = 13.sp)
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (appointment.status != "COMPLETED") {
-                        IconButton(onClick = { onStatusChange("COMPLETED") }) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "Завершити", tint = StatusCompleted)
+                when (appointment.status) {
+                    "PENDING" -> {
+                        TextButton(onClick = onOpenBrief) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Бриф", fontSize = 13.sp)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(
+                                onClick = { onStatusChange("CONFIRMED") },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("✅ Підтвердити", fontSize = 12.sp)
+                            }
+                            OutlinedButton(
+                                onClick = { onStatusChange("CANCELLED_BY_MASTER") },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("❌ Відхилити", fontSize = 12.sp, color = StatusCancelled)
+                            }
                         }
                     }
-                    if (appointment.status != "CONFIRMED") {
-                        IconButton(onClick = { onStatusChange("CONFIRMED") }) {
-                            Icon(Icons.Default.ThumbUp, contentDescription = "Підтвердити", tint = StatusConfirmed)
+                    "CONFIRMED" -> {
+                        TextButton(onClick = onOpenBrief) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Бриф", fontSize = 13.sp)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onCompleteRequest,
+                                colors = ButtonDefaults.buttonColors(containerColor = StatusCompleted),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("✨ Виконано", fontSize = 12.sp)
+                            }
+                            IconButton(onClick = { onStatusChange("CANCELLED_BY_MASTER") }) {
+                                Icon(Icons.Default.Cancel, contentDescription = "Скасувати", tint = StatusCancelled)
+                            }
                         }
                     }
-                    if (!appointment.status.startsWith("CANCELLED")) {
-                        IconButton(onClick = { onStatusChange("CANCELLED_BY_MASTER") }) {
-                            Icon(Icons.Default.Cancel, contentDescription = "Скасувати", tint = StatusCancelled)
+                    "COMPLETED" -> {
+                        Surface(
+                            color = Color(0xFFE8F5E9),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "✅ Роботу виконано",
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onOpenBrief,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("📋 Редагувати бриф", fontSize = 12.sp)
+                        }
+                    }
+                    else -> {
+                        Surface(
+                            color = Color(0xFFFFEBEE),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "❌ Скасовано",
+                                color = StatusCancelled,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        TextButton(onClick = onOpenBrief) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Бриф", fontSize = 13.sp)
                         }
                     }
                 }

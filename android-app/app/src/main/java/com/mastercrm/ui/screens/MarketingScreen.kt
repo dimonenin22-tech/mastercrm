@@ -6,6 +6,7 @@ import android.graphics.*
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,9 +46,9 @@ import java.util.Locale
 // 1. МОДЕЛІ ДАНИХ ДЛЯ КОНСТРУКТОРА СТОРІС
 // =====================================================================
 enum class StoryMode(val title: String) {
-    FREE_SLOTS("Вільні віконця"),
-    PRICE_LIST("Прайс-лист"),
-    CLIENT_REVIEW("Відгук (TG Чат)"),
+    FREE_SLOTS("Віконця"),
+    PRICE_LIST("Прайс"),
+    CLIENT_REVIEW("Сторіс-Відгук"),
     ALL_REVIEWS_LIST("Усі відгуки")
 }
 
@@ -394,8 +395,14 @@ object CanvaStoryRenderer {
             color = Color.parseColor("#64B5F6")
             textSize = 32f
         }
-        canvas.drawText(clientName.ifBlank { "Клієнт студії" }, margin + 175f, chatTop + 85f, namePaint)
-        canvas.drawText("💅 Послуга: $serviceTitle", margin + 175f, chatTop + 132f, srvPaint)
+        val maxHeaderWidth = (chatRect.right - (margin + 175f) - 30f).coerceAtLeast(100f)
+        val fullClientName = clientName.ifBlank { "Клієнт студії" }
+        val ellipsizedName = TextUtils.ellipsize(fullClientName, TextPaint(namePaint), maxHeaderWidth, TextUtils.TruncateAt.END).toString()
+        canvas.drawText(ellipsizedName, margin + 175f, chatTop + 85f, namePaint)
+
+        val fullServiceText = "💅 Послуга: $serviceTitle"
+        val ellipsizedService = TextUtils.ellipsize(fullServiceText, TextPaint(srvPaint), maxHeaderWidth, TextUtils.TruncateAt.END).toString()
+        canvas.drawText(ellipsizedService, margin + 175f, chatTop + 132f, srvPaint)
 
         // Розділювач шапки
         val divPaint = Paint().apply { color = Color.parseColor("#2B3846"); strokeWidth = 2f }
@@ -584,17 +591,28 @@ fun MarketingStudioScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Перемикач типу шаблону (Вільні вікна / Прайс / Відгук)
+        // 1. Перемикач типу шаблону (Віконця / Прайс / Сторіс-Відгук / Усі відгуки)
         item {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            ScrollableTabRow(
+                selectedTabIndex = StoryMode.entries.indexOf(selectedMode),
+                edgePadding = 8.dp,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = RosePrimary
+            ) {
                 StoryMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(
+                    Tab(
                         selected = selectedMode == mode,
                         onClick = { selectedMode = mode },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = StoryMode.entries.size)
-                    ) {
-                        Text(mode.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
-                    }
+                        text = {
+                            Text(
+                                mode.title,
+                                maxLines = 1,
+                                softWrap = false,
+                                fontSize = 13.sp,
+                                fontWeight = if (selectedMode == mode) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
                 }
             }
         }
