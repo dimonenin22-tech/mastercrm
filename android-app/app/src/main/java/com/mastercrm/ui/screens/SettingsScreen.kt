@@ -1073,7 +1073,7 @@ fun MastersManagementTab(
     val app = MasterCrmApp.instance
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val botUsername = "manicurulanails_bot"
+    val botUsername = "zachanails_bot"
 
     LazyColumn(
         modifier = Modifier

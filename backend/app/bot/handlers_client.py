@@ -166,8 +166,9 @@ async def cmd_start(message: Message, state: FSMContext, command: Optional[Comma
     first_name = html.escape(message.from_user.first_name if message.from_user else "Клієнт")
     text = (
         f"Привіт, <b>{first_name}</b>! ✨\n\n"
-        f"Ласкаво просимо до <b>{html.escape(settings.PROJECT_NAME)}</b> — системи онлайн-запису та краси.\n"
-        f"Оберіть потрібний пункт у меню нижче:"
+        f"Раді вітати вас у боті онлайн-запису студії <b>JuNail</b> 💅\n"
+        f"Тут ви можете обрати зручний час для манікюру, переглянути актуальний прайс або перевірити свої записи.\n\n"
+        f"Оберіть потрібну дію в меню нижче 👇"
     )
     await message.answer(text, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
     await message.answer("💅 Швидке меню:", reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
@@ -190,9 +191,8 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     first_name = html.escape(callback.from_user.first_name if callback.from_user else "Клієнт")
     text = (
-        f"Привіт, <b>{first_name}</b>! ✨\n\n"
-        f"Ласкаво просимо до <b>{html.escape(settings.PROJECT_NAME)}</b> — системи онлайн-запису та краси.\n"
-        f"Оберіть потрібний пункт у меню нижче:"
+        f"Головне меню <b>JuNail</b> ✨\n\n"
+        f"Раді вітати, <b>{first_name}</b>! Оберіть потрібний пункт нижче 👇"
     )
     try:
         await callback.message.edit_text(text, reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")

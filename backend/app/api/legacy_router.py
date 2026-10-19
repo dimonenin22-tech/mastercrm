@@ -165,7 +165,7 @@ async def render_public_landing_page() -> str:
         address = settings_map.get("address", "вул. Хрещатик, 1, оф. 10, Київ")
         phone = settings_map.get("phone", "+380 (99) 123-45-67")
         instagram = settings_map.get("instagram", "@master_crm_beauty")
-        bot_username = settings_map.get("bot_username", "master_crm_bot").replace("@", "")
+        bot_username = settings_map.get("bot_username", "zachanails_bot").replace("@", "")
 
         # Owner master
         m_res = await db.execute(select(Master).where(Master.role == "owner", Master.deleted.is_(False)))

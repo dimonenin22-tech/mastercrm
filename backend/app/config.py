@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "MasterCRM v2.0"
+    PROJECT_NAME: str = "JuNailCRM"
     ENVIRONMENT: str = "production"
     DEBUG: bool = False
     SERVER_HOST: str = "0.0.0.0"

@@ -103,7 +103,7 @@ async def cmd_login(message: Message) -> None:
         f"Ваш одноразовий 6-значний код для входу в Android-додаток:\n"
         f"👉 <code>{otp}</code> 👈\n\n"
         f"⏳ Код дійсний <b>15 хвилин</b>.\n"
-        f"Відкрийте MasterCRM на вашому Android-пристрої та введіть цей код для синхронізації."
+        f"Відкрийте JuNailCRM на вашому Android-пристрої та введіть цей код для синхронізації."
     )
     await message.answer(text, parse_mode="HTML")
 
