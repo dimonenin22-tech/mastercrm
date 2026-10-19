@@ -597,7 +597,7 @@ fun MarketingStudioScreen(
                 selectedTabIndex = StoryMode.entries.indexOf(selectedMode),
                 edgePadding = 8.dp,
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = RosePrimary
+                contentColor = MaterialTheme.colorScheme.primary
             ) {
                 StoryMode.entries.forEachIndexed { index, mode ->
                     Tab(

@@ -374,6 +374,7 @@ fun ClientDetailBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val app = MasterCrmApp.instance
+    val context = LocalContext.current
     val appointments by app.database.appointmentDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val briefs by app.database.visitBriefDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val latestBrief = briefs.firstOrNull()
@@ -395,10 +396,10 @@ fun ClientDetailBottomSheet(
             // Header Profile Card
             item {
                 val isDanger = client.visitsSinceLastRemoval >= 3
-                ElevatedCard(
+                OutlinedCard(
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
