@@ -1073,8 +1073,7 @@ fun MastersManagementTab(
     val app = MasterCrmApp.instance
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val studioSettings by app.database.studioSettingDao().getAllSettingsFlow().collectAsState(initial = emptyList())
-    val botUsername = studioSettings.firstOrNull { it.key == "bot_username" }?.value?.ifBlank { "manicurulanails_bot" } ?: "manicurulanails_bot"
+    val botUsername = "manicurulanails_bot"
 
     LazyColumn(
         modifier = Modifier

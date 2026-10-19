@@ -1251,7 +1251,8 @@ fun MarketingScreen() {
                     val aptStartMin = (aptStartParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (aptStartParts.getOrNull(1)?.toIntOrNull() ?: 0)
                     val aptEndParts = apt.endTime.split(":")
                     val aptEndMin = (aptEndParts.getOrNull(0)?.toIntOrNull() ?: (aptStartMin / 60 + 1)) * 60 + (aptEndParts.getOrNull(1)?.toIntOrNull() ?: 0)
-                    slotMin < aptEndMin && (slotMin + 60) > aptStartMin
+                    val effectiveEndMin = if (aptEndMin > aptStartMin) aptEndMin else (aptStartMin + 60)
+                    slotMin < effectiveEndMin && (slotMin + 60) > aptStartMin
                 }
             }
         },

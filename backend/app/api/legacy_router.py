@@ -43,6 +43,7 @@ from app.models import (
     Supplier,
     VisitBrief,
     WaitingList,
+    generate_uuid,
     utc_now,
 )
 from app.schemas import (
