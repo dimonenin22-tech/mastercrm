@@ -174,8 +174,30 @@ fun ClientsScreen() {
                     val updated = client.copy(isBlacklisted = !client.isBlacklisted)
                     app.database.clientDao().insertOrUpdate(updated)
                     selectedClientForDetail = updated
+                    app.syncRepository.queueMutation(
+                        action = "client_update",
+                        payload = mapOf(
+                            "client_id" to client.id,
+                            "is_blacklisted" to updated.isBlacklisted
+                        )
+                    )
                     val statusMsg = if (updated.isBlacklisted) "Клієнта додано в чорний список" else "Клієнта вилучено з чорного списку"
                     Toast.makeText(context, statusMsg, Toast.LENGTH_SHORT).show()
+                }
+            },
+            onUpdateDiscount = { newDiscount ->
+                scope.launch {
+                    val updated = client.copy(discountPercent = newDiscount)
+                    app.database.clientDao().insertOrUpdate(updated)
+                    selectedClientForDetail = updated
+                    app.syncRepository.queueMutation(
+                        action = "client_update",
+                        payload = mapOf(
+                            "client_id" to client.id,
+                            "discount_percent" to newDiscount
+                        )
+                    )
+                    Toast.makeText(context, "Знижку $newDiscount% збережено!", Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -370,7 +392,8 @@ fun ClientDetailBottomSheet(
     onDismiss: () -> Unit,
     onOpenNewBrief: () -> Unit,
     onResetRemoval: () -> Unit,
-    onToggleBlacklist: () -> Unit
+    onToggleBlacklist: () -> Unit,
+    onUpdateDiscount: (Int) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val app = MasterCrmApp.instance
@@ -559,6 +582,36 @@ fun ClientDetailBottomSheet(
                                         Text("Скинути", fontSize = 11.sp)
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Personal Discount Selector
+            item {
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Percent, contentDescription = null, tint = RosePrimary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Персональна знижка клієнта", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(0, 5, 10, 15).forEach { d ->
+                                FilterChip(
+                                    selected = client.discountPercent == d,
+                                    onClick = { onUpdateDiscount(d) },
+                                    label = { Text(if (d == 0) "0%" else "$d%") }
+                                )
                             }
                         }
                     }

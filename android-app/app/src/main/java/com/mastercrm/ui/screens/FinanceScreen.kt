@@ -169,6 +169,7 @@ fun FinanceScreen() {
                     app.syncRepository.queueMutation(
                         action = "income_add",
                         payload = mapOf(
+                            "id" to id,
                             "master_id" to masterId,
                             "amount" to amount,
                             "payment_method" to method,
@@ -209,6 +210,7 @@ fun FinanceScreen() {
                     app.syncRepository.queueMutation(
                         action = "expense_add",
                         payload = mapOf(
+                            "id" to id,
                             "master_id" to masterId,
                             "category" to category,
                             "amount" to amount,

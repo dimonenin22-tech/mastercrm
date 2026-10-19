@@ -1,6 +1,12 @@
 package com.mastercrm.ui.screens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -8,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +27,10 @@ import androidx.compose.ui.unit.sp
 import com.mastercrm.MasterCrmApp
 import com.mastercrm.data.local.entity.VisitBriefEntity
 import com.mastercrm.ui.theme.RosePrimary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,6 +61,74 @@ fun VisitBriefDialog(
     var photoUploadStatus by remember { mutableStateOf<String?>(null) }
     var photoBeforeUrl by remember { mutableStateOf(initialBrief?.photoBeforeUrl ?: "") }
     var photoAfterUrl by remember { mutableStateOf(initialBrief?.photoAfterUrl ?: "") }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            scope.launch(Dispatchers.IO) {
+                try {
+                    withContext(Dispatchers.Main) { isUploadingPhoto = true }
+                    val inputStream = context.contentResolver.openInputStream(selectedUri)
+                    val originalBitmap = BitmapFactory.decodeStream(inputStream)
+                    inputStream?.close()
+
+                    if (originalBitmap != null) {
+                        val maxDimension = 800
+                        val width = originalBitmap.width
+                        val height = originalBitmap.height
+                        val ratio = minOf(maxDimension.toFloat() / width, maxDimension.toFloat() / height, 1.0f)
+                        val scaledBitmap = if (ratio < 1.0f) {
+                            Bitmap.createScaledBitmap(
+                                originalBitmap,
+                                (width * ratio).toInt(),
+                                (height * ratio).toInt(),
+                                true
+                            )
+                        } else {
+                            originalBitmap
+                        }
+                        val outputStream = ByteArrayOutputStream()
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 75, outputStream)
+                        val bytes = outputStream.toByteArray()
+                        val base64Str = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+
+                        val api = MasterCrmApp.instance.apiClient.getApiService()
+                        val resp = api.uploadPhoto(
+                            mapOf(
+                                "client_id" to clientId,
+                                "appointment_id" to appointmentId,
+                                "photo_type" to attachedPhotoType,
+                                "filename" to "photo_${attachedPhotoType.lowercase()}_${appointmentId.take(8)}.jpg",
+                                "image_base64" to base64Str
+                            )
+                        )
+                        withContext(Dispatchers.Main) {
+                            val finalUrl = if (resp.success && resp.data != null && !resp.data.fileUrl.isNullOrBlank()) {
+                                resp.data.fileUrl
+                            } else {
+                                base64Str
+                            }
+                            if (attachedPhotoType == "BEFORE") {
+                                photoBeforeUrl = finalUrl
+                            } else {
+                                photoAfterUrl = finalUrl
+                            }
+                            photoUploadStatus = "Фото $attachedPhotoType успішно прикріплено! ✅"
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        photoUploadStatus = "Помилка завантаження фото"
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploadingPhoto = false
+                    }
+                }
+            }
+        }
+    }
 
     val coatingOptions = listOf("Ідеально", "Відшарування", "Тріщини / Скол", "Переношене (>4 тиж)", "Без покриття")
     val nailPlateOptions = listOf("Нормальна", "Тонка / Ослаблена", "Волога", "Суха / Ламка", "Клююча")
@@ -203,41 +281,47 @@ fun VisitBriefDialog(
                 }
 
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                isUploadingPhoto = true
-                                val api = MasterCrmApp.instance.apiClient.getApiService()
-                                val resp = api.uploadPhoto(
-                                    mapOf(
-                                        "client_id" to clientId,
-                                        "appointment_id" to appointmentId,
-                                        "photo_type" to attachedPhotoType,
-                                        "filename" to "photo_${attachedPhotoType.lowercase()}_${appointmentId.take(8)}.jpg"
-                                    )
-                                )
-                                if (resp.success && resp.data != null) {
-                                    val url = resp.data.fileUrl
-                                    if (attachedPhotoType == "BEFORE") {
-                                        photoBeforeUrl = url
-                                    } else {
-                                        photoAfterUrl = url
-                                    }
-                                    photoUploadStatus = "Фото $attachedPhotoType збережено!"
-                                }
-                            } catch (e: Exception) {
-                                photoUploadStatus = "Збережено мітку фото $attachedPhotoType"
-                            } finally {
-                                isUploadingPhoto = false
-                            }
-                        }
-                    },
+                    onClick = { photoPickerLauncher.launch("image/*") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isUploadingPhoto
                 ) {
                     Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isUploadingPhoto) "Завантаження..." else "Прикріпити фото $attachedPhotoType")
+                    Text(if (isUploadingPhoto) "Завантаження..." else "Обрати фото $attachedPhotoType з галереї")
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (photoBeforeUrl.isNotBlank()) {
+                        Surface(
+                            color = Color(0xFFE8F5E9),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "До: Прикріплено ✓",
+                                color = Color(0xFF2E7D32),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (photoAfterUrl.isNotBlank()) {
+                        Surface(
+                            color = Color(0xFFE8F5E9),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "Після: Прикріплено ✓",
+                                color = Color(0xFF2E7D32),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
 
                 photoUploadStatus?.let { status ->

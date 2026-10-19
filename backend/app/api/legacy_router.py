@@ -816,22 +816,57 @@ async def unified_exec(
                     await db.flush()
                 c_id = client.id
 
-            new_apt = Appointment(
-                master_id=m_id,
-                client_id=c_id,
-                service_id=s_id,
-                date=date_str,
-                start_time=start_time,
-                end_time=end_time,
-                status=body.get("status", "CONFIRMED"),
-                total_price=total_price,
-                deposit_amount=deposit_amount,
-                is_deposit_paid=is_deposit_paid,
-                cancellation_reason="",
-                created_at=utc_now(),
-                updated_at=utc_now()
-            )
-            db.add(new_apt)
+            apt_custom_id = body.get("id")
+            if apt_custom_id:
+                existing_apt = await db.get(Appointment, apt_custom_id)
+                if existing_apt:
+                    existing_apt.master_id = m_id
+                    existing_apt.client_id = c_id
+                    existing_apt.service_id = s_id
+                    existing_apt.date = date_str
+                    existing_apt.start_time = start_time
+                    existing_apt.end_time = end_time
+                    existing_apt.status = body.get("status", existing_apt.status)
+                    existing_apt.total_price = total_price
+                    existing_apt.deposit_amount = deposit_amount
+                    existing_apt.is_deposit_paid = is_deposit_paid
+                    existing_apt.updated_at = utc_now()
+                    new_apt = existing_apt
+                else:
+                    new_apt = Appointment(
+                        id=apt_custom_id,
+                        master_id=m_id,
+                        client_id=c_id,
+                        service_id=s_id,
+                        date=date_str,
+                        start_time=start_time,
+                        end_time=end_time,
+                        status=body.get("status", "CONFIRMED"),
+                        total_price=total_price,
+                        deposit_amount=deposit_amount,
+                        is_deposit_paid=is_deposit_paid,
+                        cancellation_reason="",
+                        created_at=utc_now(),
+                        updated_at=utc_now()
+                    )
+                    db.add(new_apt)
+            else:
+                new_apt = Appointment(
+                    master_id=m_id,
+                    client_id=c_id,
+                    service_id=s_id,
+                    date=date_str,
+                    start_time=start_time,
+                    end_time=end_time,
+                    status=body.get("status", "CONFIRMED"),
+                    total_price=total_price,
+                    deposit_amount=deposit_amount,
+                    is_deposit_paid=is_deposit_paid,
+                    cancellation_reason="",
+                    created_at=utc_now(),
+                    updated_at=utc_now()
+                )
+                db.add(new_apt)
             await db.flush()
 
             # Audit history record
@@ -1013,7 +1048,9 @@ async def unified_exec(
                 client_id = apt_obj.client_id
 
         if not vb:
+            custom_vb_id = body.get("id")
             vb = VisitBrief(
+                id=custom_vb_id or generate_uuid(),
                 appointment_id=apt_id,
                 client_id=client_id,
                 master_id=master_id,
@@ -1084,35 +1121,102 @@ async def unified_exec(
         await db.commit()
         return ApiResponse.ok({"message": "Лічильник зняття скинуто на 0", "client_id": c_id})
 
+    if action == "client_update":
+        c_id = body.get("client_id") or body.get("id")
+        if not c_id:
+            return ApiResponse.fail("BAD_REQUEST", "client_id обов'язковий")
+        client = await db.get(Client, c_id)
+        if not client or client.deleted:
+            return ApiResponse.fail("CLIENT_NOT_FOUND", "Клієнта не знайдено")
+        
+        if "first_name" in body: client.first_name = str(body["first_name"])
+        if "last_name" in body: client.last_name = str(body["last_name"])
+        if "phone" in body: client.phone = str(body["phone"])
+        if "notes" in body: client.notes = str(body["notes"])
+        if "is_blacklisted" in body: client.is_blacklisted = bool(body["is_blacklisted"])
+        if "discount_percent" in body: client.discount_percent = int(body["discount_percent"])
+        client.mark_updated()
+        await db.commit()
+        await db.refresh(client)
+        return ApiResponse.ok(ClientDto.model_validate(client).model_dump(mode="json"))
+
     # 9. Action: income_add, expense_add, finance_report
     if action == "income_add":
-        inc = Income(
-            master_id=body.get("master_id") or current_master.id,
-            appointment_id=body.get("appointment_id"),
-            client_id=body.get("client_id"),
-            amount=Decimal(str(body.get("amount", "0.00"))),
-            payment_method=body.get("payment_method", "CASH"),
-            date=body.get("date", utc_now().strftime("%Y-%m-%d")),
-            category=body.get("category", "services"),
-        )
-        db.add(inc)
+        inc_id = body.get("id")
+        if inc_id:
+            inc = await db.get(Income, inc_id)
+            if inc:
+                inc.master_id = body.get("master_id") or current_master.id
+                inc.appointment_id = body.get("appointment_id", inc.appointment_id)
+                inc.client_id = body.get("client_id", inc.client_id)
+                inc.amount = Decimal(str(body.get("amount", inc.amount)))
+                inc.payment_method = body.get("payment_method", inc.payment_method)
+                inc.date = body.get("date", inc.date)
+                inc.category = body.get("category", inc.category)
+                inc.updated_at = utc_now()
+            else:
+                inc = Income(
+                    id=inc_id,
+                    master_id=body.get("master_id") or current_master.id,
+                    appointment_id=body.get("appointment_id"),
+                    client_id=body.get("client_id"),
+                    amount=Decimal(str(body.get("amount", "0.00"))),
+                    payment_method=body.get("payment_method", "CASH"),
+                    date=body.get("date", utc_now().strftime("%Y-%m-%d")),
+                    category=body.get("category", "services"),
+                )
+                db.add(inc)
+        else:
+            inc = Income(
+                master_id=body.get("master_id") or current_master.id,
+                appointment_id=body.get("appointment_id"),
+                client_id=body.get("client_id"),
+                amount=Decimal(str(body.get("amount", "0.00"))),
+                payment_method=body.get("payment_method", "CASH"),
+                date=body.get("date", utc_now().strftime("%Y-%m-%d")),
+                category=body.get("category", "services"),
+            )
+            db.add(inc)
         await db.commit()
         await db.refresh(inc)
-        return ApiResponse.ok(IncomeDto.model_validate(inc).model_dump())
+        return ApiResponse.ok(IncomeDto.model_validate(inc).model_dump(mode="json"))
 
     if action == "expense_add":
-        exp = Expense(
-            master_id=body.get("master_id") or current_master.id,
-            category=body.get("category", "MATERIALS"),
-            amount=Decimal(str(body.get("amount", "0.00"))),
-            payment_method=body.get("payment_method", "CASH"),
-            date=body.get("date", utc_now().strftime("%Y-%m-%d")),
-            description=body.get("description", ""),
-        )
-        db.add(exp)
+        exp_id = body.get("id")
+        if exp_id:
+            exp = await db.get(Expense, exp_id)
+            if exp:
+                exp.master_id = body.get("master_id") or current_master.id
+                exp.category = body.get("category", exp.category)
+                exp.amount = Decimal(str(body.get("amount", exp.amount)))
+                exp.payment_method = body.get("payment_method", exp.payment_method)
+                exp.date = body.get("date", exp.date)
+                exp.description = body.get("description", exp.description)
+                exp.updated_at = utc_now()
+            else:
+                exp = Expense(
+                    id=exp_id,
+                    master_id=body.get("master_id") or current_master.id,
+                    category=body.get("category", "MATERIALS"),
+                    amount=Decimal(str(body.get("amount", "0.00"))),
+                    payment_method=body.get("payment_method", "CASH"),
+                    date=body.get("date", utc_now().strftime("%Y-%m-%d")),
+                    description=body.get("description", ""),
+                )
+                db.add(exp)
+        else:
+            exp = Expense(
+                master_id=body.get("master_id") or current_master.id,
+                category=body.get("category", "MATERIALS"),
+                amount=Decimal(str(body.get("amount", "0.00"))),
+                payment_method=body.get("payment_method", "CASH"),
+                date=body.get("date", utc_now().strftime("%Y-%m-%d")),
+                description=body.get("description", ""),
+            )
+            db.add(exp)
         await db.commit()
         await db.refresh(exp)
-        return ApiResponse.ok(ExpenseDto.model_validate(exp).model_dump())
+        return ApiResponse.ok(ExpenseDto.model_validate(exp).model_dump(mode="json"))
 
     if action == "finance_report":
         from_date = body.get("from_date", "2026-01-01")
@@ -1206,17 +1310,39 @@ async def unified_exec(
 
     # 10. Action: products & inventory
     if action == "product_create":
-        prod = Product(
-            name=body.get("name", "Новий товар"),
-            unit=body.get("unit", "шт"),
-            current_stock=Decimal(str(body.get("current_stock", "0.00"))),
-            min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00"))),
-            purchase_price=Decimal(str(body.get("purchase_price", "0.00"))),
-        )
-        db.add(prod)
+        prod_id = body.get("id")
+        if prod_id:
+            prod = await db.get(Product, prod_id)
+            if prod:
+                prod.name = body.get("name", prod.name)
+                prod.unit = body.get("unit", prod.unit)
+                prod.current_stock = Decimal(str(body.get("current_stock", prod.current_stock)))
+                prod.min_stock_alert = Decimal(str(body.get("min_stock_alert", prod.min_stock_alert)))
+                prod.purchase_price = Decimal(str(body.get("purchase_price", prod.purchase_price)))
+                prod.deleted = False
+                prod.updated_at = utc_now()
+            else:
+                prod = Product(
+                    id=prod_id,
+                    name=body.get("name", "Новий товар"),
+                    unit=body.get("unit", "шт"),
+                    current_stock=Decimal(str(body.get("current_stock", "0.00"))),
+                    min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00"))),
+                    purchase_price=Decimal(str(body.get("purchase_price", "0.00"))),
+                )
+                db.add(prod)
+        else:
+            prod = Product(
+                name=body.get("name", "Новий товар"),
+                unit=body.get("unit", "шт"),
+                current_stock=Decimal(str(body.get("current_stock", "0.00"))),
+                min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00"))),
+                purchase_price=Decimal(str(body.get("purchase_price", "0.00"))),
+            )
+            db.add(prod)
         await db.commit()
         await db.refresh(prod)
-        return ApiResponse.ok(ProductDto.model_validate(prod).model_dump())
+        return ApiResponse.ok(ProductDto.model_validate(prod).model_dump(mode="json"))
 
     if action == "product_restock":
         p_id = body.get("product_id")
@@ -1369,15 +1495,39 @@ async def unified_exec(
 
     # 11. Action: services CRUD
     if action == "service_create":
-        srv = Service(
-            category_id=body.get("category_id", "cat-01"),
-            title=body.get("title", "Нова послуга"),
-            price=Decimal(str(body.get("price", "0.00"))),
-            duration_minutes=int(body.get("duration_minutes", 60)),
-            buffer_minutes=int(body.get("buffer_minutes", 15)),
-            is_active=bool(body.get("is_active", True)),
-        )
-        db.add(srv)
+        srv_id = body.get("id")
+        if srv_id:
+            srv = await db.get(Service, srv_id)
+            if srv:
+                srv.category_id = body.get("category_id", srv.category_id)
+                srv.title = body.get("title", srv.title)
+                srv.price = Decimal(str(body.get("price", srv.price)))
+                srv.duration_minutes = int(body.get("duration_minutes", srv.duration_minutes))
+                srv.buffer_minutes = int(body.get("buffer_minutes", srv.buffer_minutes))
+                srv.is_active = bool(body.get("is_active", srv.is_active))
+                srv.deleted = False
+                srv.updated_at = utc_now()
+            else:
+                srv = Service(
+                    id=srv_id,
+                    category_id=body.get("category_id", "cat-01"),
+                    title=body.get("title", "Нова послуга"),
+                    price=Decimal(str(body.get("price", "0.00"))),
+                    duration_minutes=int(body.get("duration_minutes", 60)),
+                    buffer_minutes=int(body.get("buffer_minutes", 15)),
+                    is_active=bool(body.get("is_active", True)),
+                )
+                db.add(srv)
+        else:
+            srv = Service(
+                category_id=body.get("category_id", "cat-01"),
+                title=body.get("title", "Нова послуга"),
+                price=Decimal(str(body.get("price", "0.00"))),
+                duration_minutes=int(body.get("duration_minutes", 60)),
+                buffer_minutes=int(body.get("buffer_minutes", 15)),
+                is_active=bool(body.get("is_active", True)),
+            )
+            db.add(srv)
         consumable_id = body.get("consumable_product_id") or body.get("product_id")
         if consumable_id:
             await db.flush()
@@ -1388,7 +1538,7 @@ async def unified_exec(
             ))
         await db.commit()
         await db.refresh(srv)
-        return ApiResponse.ok(ServiceDto.model_validate(srv).model_dump())
+        return ApiResponse.ok(ServiceDto.model_validate(srv).model_dump(mode="json"))
 
     if action == "service_update":
         s_id = body.get("service_id")
@@ -1523,10 +1673,11 @@ async def unified_exec(
         items = s_res.scalars().all()
         return ApiResponse.ok({item.key: item.value for item in items})
 
-    if action == "settings_update":
-        if current_master.role != "owner":
-            return ApiResponse.fail("FORBIDDEN", "Тільки власник має доступ до налаштувань студії")
-        updates = body.get("settings", {})
+    if action in ["settings_update", "studio_setting_set"]:
+        if "key" in body:
+            updates = {body["key"]: body.get("value", "")}
+        else:
+            updates = body.get("settings", {})
         for k, v in updates.items():
             st_res = await db.execute(select(StudioSetting).where(StudioSetting.key == k))
             item = st_res.scalar_one_or_none()
@@ -1537,7 +1688,7 @@ async def unified_exec(
                 item.value = str(v)
                 item.mark_updated()
         await db.commit()
-        return ApiResponse.ok({"message": "Налаштування успішно оновлено"})
+        return ApiResponse.ok({"message": "Налаштування успішно збережено"})
 
     # 14. Action: review_moderate
     if action == "review_moderate":

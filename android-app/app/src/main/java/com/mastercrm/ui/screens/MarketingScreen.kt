@@ -1244,7 +1244,15 @@ fun MarketingScreen() {
             val dayApps = appointmentEntities.filter { it.date == dateIso && !it.status.startsWith("CANCELLED") }
             val standardSlots = listOf("09:00", "11:00", "13:30", "15:30", "18:00")
             standardSlots.filter { slot ->
-                dayApps.none { it.startTime == slot }
+                val slotParts = slot.split(":")
+                val slotMin = (slotParts.getOrNull(0)?.toIntOrNull() ?: 9) * 60 + (slotParts.getOrNull(1)?.toIntOrNull() ?: 0)
+                dayApps.none { apt ->
+                    val aptStartParts = apt.startTime.split(":")
+                    val aptStartMin = (aptStartParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (aptStartParts.getOrNull(1)?.toIntOrNull() ?: 0)
+                    val aptEndParts = apt.endTime.split(":")
+                    val aptEndMin = (aptEndParts.getOrNull(0)?.toIntOrNull() ?: (aptStartMin / 60 + 1)) * 60 + (aptEndParts.getOrNull(1)?.toIntOrNull() ?: 0)
+                    slotMin < aptEndMin && (slotMin + 60) > aptStartMin
+                }
             }
         },
         initialServices = services,

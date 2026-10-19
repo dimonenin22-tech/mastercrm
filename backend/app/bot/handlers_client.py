@@ -151,7 +151,7 @@ async def cmd_start(message: Message, state: FSMContext, command: Optional[Comma
                     service_price=float(srv.price),
                     service_duration=srv.duration_minutes
                 )
-                await state.set_state(BookingStates.choosing_date)
+                await state.set_state(BookingStates.waiting_for_date)
                 today_str = get_kyiv_today()
                 parts = today_str.split("-")
                 cal_kb = create_inline_calendar(int(parts[0]), int(parts[1]), today_str)
@@ -568,17 +568,33 @@ async def cancel_by_client_cb(callback: CallbackQuery) -> None:
 
 # 4. Booking Wizard Flow (FSM)
 @client_router.message(F.text == "💅 Записатися онлайн")
-async def start_booking_flow(message: Message, state: FSMContext) -> None:
+async def start_booking_flow(message: Message, state: FSMContext, is_callback: bool = False) -> None:
     await state.clear()
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(ServiceCategory).where(ServiceCategory.deleted.is_(False), ServiceCategory.is_active.is_(True)))
         cats = res.scalars().all()
         if not cats:
+            if is_callback:
+                try:
+                    await message.edit_text("Наразі онлайн-запис недоступний (немає активних категорій послуг).", parse_mode="HTML")
+                    return
+                except Exception:
+                    pass
             await message.answer("Наразі онлайн-запис недоступний (немає активних категорій послуг).", parse_mode="HTML")
             return
 
         data_cats = [(c.id, c.name, c.icon_emoji) for c in cats]
         await state.set_state(BookingStates.waiting_for_category)
+        if is_callback:
+            try:
+                await message.edit_text(
+                    "💅 <b>Крок 1/5: Оберіть категорію послуг:</b>",
+                    reply_markup=get_categories_keyboard(data_cats),
+                    parse_mode="HTML"
+                )
+                return
+            except Exception:
+                pass
         await message.answer(
             "💅 <b>Крок 1/5: Оберіть категорію послуг:</b>",
             reply_markup=get_categories_keyboard(data_cats),
@@ -610,8 +626,26 @@ async def process_category_selected(callback: CallbackQuery, state: FSMContext) 
 
 @client_router.callback_query(F.data == "booking:back_cat")
 async def back_to_categories(callback: CallbackQuery, state: FSMContext) -> None:
-    await start_booking_flow(callback.message, state)
+    await start_booking_flow(callback.message, state, is_callback=True)
     await callback.answer()
+
+
+@client_router.callback_query(F.data == "booking:cancel")
+async def cb_booking_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Запис скасовано")
+    try:
+        await callback.message.edit_text(
+            "❌ <b>Запис скасовано.</b> Ви завжди можете розпочати заново у зручний час!",
+            reply_markup=get_client_main_inline_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            "❌ <b>Запис скасовано.</b>",
+            reply_markup=get_client_main_inline_keyboard(),
+            parse_mode="HTML"
+        )
 
 
 @client_router.callback_query(BookingStates.waiting_for_service, F.data.startswith("srv:"))

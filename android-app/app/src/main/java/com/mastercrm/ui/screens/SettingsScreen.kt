@@ -200,6 +200,7 @@ fun SettingsScreen(
                     app.syncRepository.queueMutation(
                         action = "service_create",
                         payload = mapOf(
+                            "id" to id,
                             "title" to title,
                             "price" to price,
                             "duration_minutes" to duration,
@@ -1072,7 +1073,8 @@ fun MastersManagementTab(
     val app = MasterCrmApp.instance
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val botUsername = "manicurulanails_bot"
+    val studioSettings by app.database.studioSettingDao().getAllSettingsFlow().collectAsState(initial = emptyList())
+    val botUsername = studioSettings.firstOrNull { it.key == "bot_username" }?.value?.ifBlank { "manicurulanails_bot" } ?: "manicurulanails_bot"
 
     LazyColumn(
         modifier = Modifier

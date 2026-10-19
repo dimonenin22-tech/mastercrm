@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "super-secret-mastercrm-key-9876543210"
     DEFAULT_OWNER_PHONE: str = "+380991234567"
     DEFAULT_OWNER_NAME: str = "Анастасія (Власниця)"
+    MASTER_CHAT_ID: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

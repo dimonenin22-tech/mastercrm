@@ -322,6 +322,13 @@ fun CalendarScreen() {
                 scope.launch {
                     val aptId = UUID.randomUUID().toString()
                     val masterId = app.authRepository.getMasterId() ?: "m-01"
+                    val selectedSrv = services.firstOrNull { it.id == srvId }
+                    val durationMin = selectedSrv?.durationMinutes ?: 60
+                    val endT = try {
+                        val parts = startTime.split(":")
+                        val totalM = parts[0].toInt() * 60 + parts[1].toInt() + durationMin
+                        String.format("%02d:%02d", (totalM / 60) % 24, totalM % 60)
+                    } catch (e: Exception) { startTime }
 
                     // Optimistic local appointment
                     val newEntity = AppointmentEntity(
@@ -331,7 +338,7 @@ fun CalendarScreen() {
                         serviceId = srvId,
                         date = dateStr,
                         startTime = startTime,
-                        endTime = startTime,
+                        endTime = endT,
                         status = "CONFIRMED",
                         totalPrice = price,
                         depositAmount = 0.0,
@@ -347,12 +354,14 @@ fun CalendarScreen() {
                     app.syncRepository.queueMutation(
                         action = "appointment_create",
                         payload = mapOf(
+                            "id" to aptId,
                             "master_id" to masterId,
                             "service_id" to srvId,
                             "client_name" to clientName,
                             "client_phone" to clientPhone,
                             "date" to dateStr,
                             "start_time" to startTime,
+                            "end_time" to endT,
                             "total_price" to price,
                             "status" to "CONFIRMED"
                         )
@@ -572,6 +581,7 @@ fun AppointmentCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateAppointmentDialog(
     selectedDate: String,
@@ -583,13 +593,44 @@ fun CreateAppointmentDialog(
     var phone by remember { mutableStateOf("") }
     var time by remember { mutableStateOf("10:00") }
     var selectedServiceId by remember { mutableStateOf(services.firstOrNull()?.id ?: "") }
-    var priceText by remember { mutableStateOf(services.firstOrNull()?.price?.toString() ?: "500") }
+    var priceText by remember { mutableStateOf(services.firstOrNull()?.price?.toInt()?.toString() ?: "500") }
+    var serviceMenuExpanded by remember { mutableStateOf(false) }
+    val currentService = services.firstOrNull { it.id == selectedServiceId }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Новий запис ($selectedDate)") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(
+                    expanded = serviceMenuExpanded,
+                    onExpandedChange = { serviceMenuExpanded = !serviceMenuExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = currentService?.let { "${it.title} (${it.price.toInt()} грн)" } ?: "Оберіть послугу",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Послуга") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = serviceMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = serviceMenuExpanded,
+                        onDismissRequest = { serviceMenuExpanded = false }
+                    ) {
+                        services.forEach { srv ->
+                            DropdownMenuItem(
+                                text = { Text("${srv.title} (${srv.price.toInt()} грн, ${srv.durationMinutes} хв)") },
+                                onClick = {
+                                    selectedServiceId = srv.id
+                                    priceText = srv.price.toInt().toString()
+                                    serviceMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
