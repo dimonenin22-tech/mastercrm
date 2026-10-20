@@ -403,7 +403,7 @@ fun ClientDetailBottomSheet(
     val briefs by app.database.visitBriefDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val latestBrief = briefs.firstOrNull()
     val reviews by app.database.reviewDao().getReviewsForClientFlow(client.id).collectAsState(initial = emptyList())
-    val allServices by app.database.serviceDao().getAllFlow().collectAsState(initial = emptyList())
+    val allServices by app.database.serviceDao().getAllServicesFlow().collectAsState(initial = emptyList())
     var viewingPhotoUrl by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(

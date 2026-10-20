@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun VisitBriefDialog(
     appointmentId: String,
@@ -74,16 +74,16 @@ fun VisitBriefDialog(
             app.database.visitBriefDao().getByAppointmentId(appointmentId)
         }
         if (existing != null) {
-            if (existing.coatingCondition.isNotBlank()) coatingCondition = existing.coatingCondition
-            if (existing.nailPlateType.isNotBlank()) nailPlateType = existing.nailPlateType
-            if (existing.cuticleType.isNotBlank()) cuticleType = existing.cuticleType
-            if (existing.baseGelUsed.isNotBlank()) baseGelUsed = existing.baseGelUsed
-            if (existing.designAndLength.isNotBlank()) designAndLength = existing.designAndLength
-            if (existing.healthNotes?.isNotBlank() == true) healthNotes = existing.healthNotes
-            if (existing.coffeePrefs?.isNotBlank() == true) coffeePrefs = existing.coffeePrefs
-            if (existing.materialNotes?.isNotBlank() == true) materialNotes = existing.materialNotes
-            if (!existing.photoBeforeUrl.isNullOrBlank()) photoBeforeUrl = existing.photoBeforeUrl
-            if (!existing.photoAfterUrl.isNullOrBlank()) photoAfterUrl = existing.photoAfterUrl
+            existing.coatingCondition?.takeIf { it.isNotBlank() }?.let { coatingCondition = it }
+            existing.nailPlateType?.takeIf { it.isNotBlank() }?.let { nailPlateType = it }
+            existing.cuticleType?.takeIf { it.isNotBlank() }?.let { cuticleType = it }
+            existing.baseGelUsed?.takeIf { it.isNotBlank() }?.let { baseGelUsed = it }
+            existing.designAndLength?.takeIf { it.isNotBlank() }?.let { designAndLength = it }
+            existing.healthNotes?.takeIf { it.isNotBlank() }?.let { healthNotes = it }
+            existing.coffeePrefs?.takeIf { it.isNotBlank() }?.let { coffeePrefs = it }
+            existing.materialNotes?.takeIf { it.isNotBlank() }?.let { materialNotes = it }
+            existing.photoBeforeUrl?.takeIf { it.isNotBlank() }?.let { photoBeforeUrl = it }
+            existing.photoAfterUrl?.takeIf { it.isNotBlank() }?.let { photoAfterUrl = it }
         }
     }
 
