@@ -266,6 +266,7 @@ fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StudioSettingsTab(
     isOwner: Boolean,
@@ -278,6 +279,7 @@ fun StudioSettingsTab(
 ) {
     val app = MasterCrmApp.instance
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier
@@ -376,6 +378,133 @@ fun StudioSettingsTab(
                         color = RosePrimary,
                         fontSize = 11.5.sp
                     )
+                }
+            }
+        }
+
+        // Prepayment (Deposit) Settings Card
+        item {
+            var depositMode by remember { mutableStateOf("NONE") } // NONE, FIRST_TIME, ALL
+            var depositAmount by remember { mutableStateOf("200") }
+            var jarLink by remember { mutableStateOf("") }
+            var cardDetails by remember { mutableStateOf("") }
+            var isSavingDeposit by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                try {
+                    val api = app.apiClient.getApiService()
+                    val resp = api.executeAction("settings_get", emptyMap<String, Any>())
+                    if (resp.success && resp.data is Map<*, *>) {
+                        val map = resp.data as Map<String, Any>
+                        depositMode = map["deposit_mode"]?.toString() ?: if (map["deposit_required"]?.toString() == "true") "ALL" else "NONE"
+                        depositAmount = map["deposit_amount"]?.toString() ?: "200"
+                        jarLink = map["jar_link"]?.toString() ?: ""
+                        cardDetails = map["card_details"]?.toString() ?: ""
+                    }
+                } catch (e: Exception) {
+                    // Keep defaults
+                }
+            }
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CreditCard, contentDescription = null, tint = RosePrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("💳 Налаштування передоплати (Завдатку)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+
+                    Text("Кому відправляти запит на передоплату:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        FilterChip(
+                            selected = depositMode == "NONE",
+                            onClick = { depositMode = "NONE" },
+                            label = { Text("Нікому (Без передоплати)") }
+                        )
+                        FilterChip(
+                            selected = depositMode == "FIRST_TIME",
+                            onClick = { depositMode = "FIRST_TIME" },
+                            label = { Text("Лише новим клієнтам (Вперше)") }
+                        )
+                        FilterChip(
+                            selected = depositMode == "ALL",
+                            onClick = { depositMode = "ALL" },
+                            label = { Text("Усім клієнтам") }
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = depositAmount,
+                        onValueChange = { depositAmount = it },
+                        label = { Text("Сума передоплати (грн)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = jarLink,
+                        onValueChange = { jarLink = it },
+                        label = { Text("Посилання на Monobank Банку") },
+                        placeholder = { Text("https://send.monobank.ua/jar/...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = cardDetails,
+                        onValueChange = { cardDetails = it },
+                        label = { Text("Реквізити картки") },
+                        placeholder = { Text("5375 ... (Ім'я П.)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSavingDeposit = true
+                                try {
+                                    val api = app.apiClient.getApiService()
+                                    val resp = api.executeAction(
+                                        "settings_update",
+                                        mapOf(
+                                            "settings" to mapOf(
+                                                "deposit_mode" to depositMode,
+                                                "deposit_required" to if (depositMode == "ALL") "true" else "false",
+                                                "deposit_amount" to depositAmount.trim(),
+                                                "jar_link" to jarLink.trim(),
+                                                "card_details" to cardDetails.trim()
+                                            )
+                                        )
+                                    )
+                                    if (resp.success) {
+                                        Toast.makeText(context, "💾 Налаштування оплати збережено!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Помилка збереження", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Помилка зв'язку: ${e.message}", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isSavingDeposit = false
+                                }
+                            }
+                        },
+                        enabled = !isSavingDeposit,
+                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isSavingDeposit) "Збереження..." else "💾 Зберегти налаштування оплати", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

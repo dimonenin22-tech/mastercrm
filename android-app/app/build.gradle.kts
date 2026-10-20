@@ -12,8 +12,8 @@ android {
         applicationId = "com.mastercrm"
         minSdk = 26
         targetSdk = 34
-        versionCode = 231
-        versionName = "2.3.1"
+        versionCode = 240
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -65,6 +65,7 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Room Database
     val roomVersion = "2.6.1"

@@ -5,6 +5,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -61,6 +67,25 @@ fun VisitBriefDialog(
     var photoUploadStatus by remember { mutableStateOf<String?>(null) }
     var photoBeforeUrl by remember { mutableStateOf(initialBrief?.photoBeforeUrl ?: "") }
     var photoAfterUrl by remember { mutableStateOf(initialBrief?.photoAfterUrl ?: "") }
+    var viewingFullPhotoUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(appointmentId) {
+        val existing = withContext(Dispatchers.IO) {
+            app.database.visitBriefDao().getByAppointmentId(appointmentId)
+        }
+        if (existing != null) {
+            if (existing.coatingCondition.isNotBlank()) coatingCondition = existing.coatingCondition
+            if (existing.nailPlateType.isNotBlank()) nailPlateType = existing.nailPlateType
+            if (existing.cuticleType.isNotBlank()) cuticleType = existing.cuticleType
+            if (existing.baseGelUsed.isNotBlank()) baseGelUsed = existing.baseGelUsed
+            if (existing.designAndLength.isNotBlank()) designAndLength = existing.designAndLength
+            if (existing.healthNotes?.isNotBlank() == true) healthNotes = existing.healthNotes
+            if (existing.coffeePrefs?.isNotBlank() == true) coffeePrefs = existing.coffeePrefs
+            if (existing.materialNotes?.isNotBlank() == true) materialNotes = existing.materialNotes
+            if (!existing.photoBeforeUrl.isNullOrBlank()) photoBeforeUrl = existing.photoBeforeUrl
+            if (!existing.photoAfterUrl.isNullOrBlank()) photoAfterUrl = existing.photoAfterUrl
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -104,11 +129,7 @@ fun VisitBriefDialog(
                             )
                         )
                         withContext(Dispatchers.Main) {
-                            val finalUrl = if (resp.success && resp.data != null && !resp.data.fileUrl.isNullOrBlank()) {
-                                resp.data.fileUrl
-                            } else {
-                                base64Str
-                            }
+                            val finalUrl = base64Str
                             if (attachedPhotoType == "BEFORE") {
                                 photoBeforeUrl = finalUrl
                             } else {
@@ -147,86 +168,82 @@ fun VisitBriefDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // 1. Стан старого покриття
-                Text("Стан попереднього покриття:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    coatingOptions.take(3).forEach { opt ->
-                        FilterChip(
-                            selected = coatingCondition == opt,
-                            onClick = { coatingCondition = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
-                    }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    coatingOptions.drop(3).forEach { opt ->
-                        FilterChip(
-                            selected = coatingCondition == opt,
-                            onClick = { coatingCondition = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Стан попереднього покриття:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            coatingOptions.forEach { opt ->
+                                FilterChip(
+                                    selected = coatingCondition == opt,
+                                    onClick = { coatingCondition = opt },
+                                    label = { Text(opt, fontSize = 11.sp) }
+                                )
+                            }
+                        }
                     }
                 }
 
                 // 2. Тип нігтьової пластини
-                Text("Тип нігтьової пластини:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    nailPlateOptions.take(3).forEach { opt ->
-                        FilterChip(
-                            selected = nailPlateType == opt,
-                            onClick = { nailPlateType = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
-                    }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    nailPlateOptions.drop(3).forEach { opt ->
-                        FilterChip(
-                            selected = nailPlateType == opt,
-                            onClick = { nailPlateType = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Тип нігтьової пластини:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            nailPlateOptions.forEach { opt ->
+                                FilterChip(
+                                    selected = nailPlateType == opt,
+                                    onClick = { nailPlateType = opt },
+                                    label = { Text(opt, fontSize = 11.sp) }
+                                )
+                            }
+                        }
                     }
                 }
 
                 // 3. Тип кутикули
-                Text("Тип кутикули та чутливість:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    cuticleOptions.take(2).forEach { opt ->
-                        FilterChip(
-                            selected = cuticleType == opt,
-                            onClick = { cuticleType = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
-                    }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    cuticleOptions.drop(2).forEach { opt ->
-                        FilterChip(
-                            selected = cuticleType == opt,
-                            onClick = { cuticleType = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Тип кутикули та чутливість:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            cuticleOptions.forEach { opt ->
+                                FilterChip(
+                                    selected = cuticleType == opt,
+                                    onClick = { cuticleType = opt },
+                                    label = { Text(opt, fontSize = 11.sp) }
+                                )
+                            }
+                        }
                     }
                 }
 
                 // 4. Матеріал (База / Гель)
-                Text("База / Гель укріплення:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    baseGelOptions.take(3).forEach { opt ->
-                        FilterChip(
-                            selected = baseGelUsed == opt,
-                            onClick = { baseGelUsed = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
-                    }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    baseGelOptions.drop(3).forEach { opt ->
-                        FilterChip(
-                            selected = baseGelUsed == opt,
-                            onClick = { baseGelUsed = opt },
-                            label = { Text(opt, fontSize = 11.sp) }
-                        )
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("База / Гель укріплення:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            baseGelOptions.forEach { opt ->
+                                FilterChip(
+                                    selected = baseGelUsed == opt,
+                                    onClick = { baseGelUsed = opt },
+                                    label = { Text(opt, fontSize = 11.sp) }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -292,34 +309,40 @@ fun VisitBriefDialog(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (photoBeforeUrl.isNotBlank()) {
-                        Surface(
-                            color = Color(0xFFE8F5E9),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                "До: Прикріплено ✓",
-                                color = Color(0xFF2E7D32),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                        val beforeBmp = remember(photoBeforeUrl) { decodeBase64ToBitmap(photoBeforeUrl) }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Фото До ✓", fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                            if (beforeBmp != null) {
+                                Image(
+                                    bitmap = beforeBmp.asImageBitmap(),
+                                    contentDescription = "Фото До",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewingFullPhotoUrl = photoBeforeUrl }
+                                )
+                            }
                         }
                     }
                     if (photoAfterUrl.isNotBlank()) {
-                        Surface(
-                            color = Color(0xFFE8F5E9),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                "Після: Прикріплено ✓",
-                                color = Color(0xFF2E7D32),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                        val afterBmp = remember(photoAfterUrl) { decodeBase64ToBitmap(photoAfterUrl) }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Фото Після ✓", fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                            if (afterBmp != null) {
+                                Image(
+                                    bitmap = afterBmp.asImageBitmap(),
+                                    contentDescription = "Фото Після",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewingFullPhotoUrl = photoAfterUrl }
+                                )
+                            }
                         }
                     }
                 }
@@ -399,7 +422,9 @@ fun VisitBriefDialog(
                                     "design_and_length" to designAndLength,
                                     "health_notes" to healthNotes,
                                     "coffee_prefs" to coffeePrefs,
-                                    "material_notes" to materialNotes
+                                    "material_notes" to materialNotes,
+                                    "photo_before_url" to photoBeforeUrl,
+                                    "photo_after_url" to photoAfterUrl
                                 )
                             )
                             Toast.makeText(context, "Бриф збережено локально (офлайн)", Toast.LENGTH_SHORT).show()
@@ -418,4 +443,44 @@ fun VisitBriefDialog(
             TextButton(onClick = onDismiss) { Text("Скасувати") }
         }
     )
+
+    if (!viewingFullPhotoUrl.isNullOrBlank()) {
+        val fullBmp = remember(viewingFullPhotoUrl) { decodeBase64ToBitmap(viewingFullPhotoUrl) }
+        Dialog(onDismissRequest = { viewingFullPhotoUrl = null }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (fullBmp != null) {
+                        Image(
+                            bitmap = fullBmp.asImageBitmap(),
+                            contentDescription = "Фото візиту",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 450.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Text("Не вдалося відобразити фото", color = Color.Gray)
+                    }
+                    Button(
+                        onClick = { viewingFullPhotoUrl = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Закрити")
+                    }
+                }
+            }
+        }
+    }
 }

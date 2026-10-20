@@ -722,6 +722,8 @@ fun InventoryTab(
     onWriteoff: (ProductEntity) -> Unit,
     onAudit: (ProductEntity) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val app = MasterCrmApp.instance
     Column(modifier = Modifier.fillMaxSize()) {
         // Inventory actions bar
         Row(
@@ -854,6 +856,30 @@ fun InventoryTab(
                                 ) {
                                     Text("Факт", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
+                                OutlinedButton(
+                                    onClick = {
+                                        val newUnit = if (prod.unit == "мл") "шт" else "мл"
+                                        scope.launch {
+                                            app.syncRepository.queueMutation(
+                                                action = "product_create",
+                                                payload = mapOf(
+                                                    "id" to prod.id,
+                                                    "name" to prod.name,
+                                                    "unit" to newUnit,
+                                                    "current_stock" to prod.currentStock,
+                                                    "min_stock_alert" to prod.minStockAlert,
+                                                    "purchase_price" to prod.purchasePrice
+                                                )
+                                            )
+                                            app.syncRepository.performSync()
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                                    modifier = Modifier.weight(0.7f)
+                                ) {
+                                    Text(if (prod.unit == "мл") "→ шт" else "→ мл", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                }
                             }
                         }
                     }
@@ -931,27 +957,39 @@ fun AddProductDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = {
+                        name = it
+                        val lower = it.lowercase()
+                        if (lower.contains("ml") || lower.contains("мл") || lower.contains("база") || lower.contains("топ") || lower.contains("гель")) {
+                            unit = "мл"
+                        }
+                    },
                     label = { Text("Назва матеріалу (напр. База Komilfo 30ml)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = unit,
-                        onValueChange = { unit = it },
-                        label = { Text("Од. виміру (шт, мл, г)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = priceText,
-                        onValueChange = { priceText = it },
-                        label = { Text("Ціна закупівлі (грн)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Одиниця виміру:", fontSize = 12.sp, color = Color.Gray)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("мл", "шт", "г", "уп").forEach { u ->
+                            FilterChip(
+                                selected = unit == u,
+                                onClick = { unit = u },
+                                label = { Text(u) }
+                            )
+                        }
+                    }
                 }
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it },
+                    label = { Text("Ціна закупівлі (грн)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = stockText,

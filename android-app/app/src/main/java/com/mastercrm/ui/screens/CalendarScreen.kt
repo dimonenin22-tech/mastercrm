@@ -10,6 +10,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -432,6 +435,7 @@ fun AppointmentCard(
     onCompleteRequest: () -> Unit,
     onOpenBrief: () -> Unit
 ) {
+    var showReceiptDialog by remember { mutableStateOf(false) }
     val statusColor = when (appointment.status) {
         "CONFIRMED" -> StatusConfirmed
         "COMPLETED" -> StatusCompleted
@@ -482,6 +486,18 @@ fun AppointmentCard(
             Text(text = serviceTitle, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text(text = "$clientName ($clientPhone)", color = Color.Gray, fontSize = 13.sp)
             Text(text = "${appointment.totalPrice.toInt()} грн", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 14.sp)
+
+            if (!appointment.receiptPhotoUrl.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showReceiptDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E7D32))
+                ) {
+                    Text("🧾 Переглянути чек оплати (${appointment.depositAmount.toInt()} ₴)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
             Divider(color = DividerColor)
@@ -578,6 +594,42 @@ fun AppointmentCard(
                 }
             }
         }
+    }
+
+    if (showReceiptDialog && !appointment.receiptPhotoUrl.isNullOrBlank()) {
+        val receiptBmp = remember(appointment.receiptPhotoUrl) {
+            decodeBase64ToBitmap(appointment.receiptPhotoUrl)
+        }
+        AlertDialog(
+            onDismissRequest = { showReceiptDialog = false },
+            title = { Text("Чек про оплату завдатку (${appointment.depositAmount.toInt()} ₴)", fontWeight = FontWeight.Bold) },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (receiptBmp != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = receiptBmp.asImageBitmap(),
+                            contentDescription = "Чек оплати",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text("Не вдалося відобразити зображення чека", color = Color.Gray)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showReceiptDialog = false }) {
+                    Text("Закрити")
+                }
+            }
+        )
     }
 }
 

@@ -89,6 +89,7 @@ data class AppointmentDto(
     @SerializedName("total_price", alternate = ["totalPrice"]) val totalPrice: Double = 0.0,
     @SerializedName("deposit_amount", alternate = ["depositAmount"]) val depositAmount: Double = 0.0,
     @SerializedName("is_deposit_paid", alternate = ["isDepositPaid"]) val isDepositPaid: Boolean = false,
+    @SerializedName("receipt_photo_url", alternate = ["receiptPhotoUrl"]) val receiptPhotoUrl: String? = "",
     @SerializedName("cancellation_reason", alternate = ["cancellationReason"]) val cancellationReason: String? = "",
     @SerializedName("deleted") val deleted: Boolean = false,
     @SerializedName("version") val version: Int = 1,

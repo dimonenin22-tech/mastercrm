@@ -651,7 +651,17 @@ async def cb_booking_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 @client_router.callback_query(BookingStates.waiting_for_service, F.data.startswith("srv:"))
 async def process_service_selected(callback: CallbackQuery, state: FSMContext) -> None:
     srv_id = callback.data.split(":")[1]
-    await state.update_data(service_id=srv_id)
+    async with AsyncSessionLocal() as db:
+        srv = await db.get(Service, srv_id)
+        if srv:
+            await state.update_data(
+                service_id=srv.id,
+                service_title=srv.title,
+                service_price=float(srv.price),
+                service_duration=srv.duration_minutes
+            )
+        else:
+            await state.update_data(service_id=srv_id)
 
     today_str = get_kyiv_today()
     dt = datetime.strptime(today_str, "%Y-%m-%d")
@@ -806,11 +816,35 @@ async def back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
 async def render_booking_summary(target_message: Message, state: FSMContext, is_callback: bool = False) -> None:
     data = await state.get_data()
     s_title = data.get("service_title", "Послуга")
-    s_price = data.get("service_price", 0)
     date_str = data.get("date", "")
     start_time = format_time_str(data.get("start_time", ""))
     client_name = data.get("client_name", "Клієнт")
     client_phone = data.get("client_phone", "")
+
+    # Check if deposit is required
+    deposit_line = ""
+    async with AsyncSessionLocal() as db:
+        st_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
+        st_map = {s.key: s.value for s in st_res.scalars().all()}
+        dep_mode = st_map.get("deposit_mode", "NONE")
+        if st_map.get("deposit_required", "false").lower() == "true":
+            dep_mode = "ALL"
+        dep_val = Decimal(st_map.get("deposit_amount", "200.00"))
+
+        c_id = data.get("client_id")
+        client = None
+        if c_id:
+            client = await db.get(Client, c_id)
+        if not client:
+            tg_id = target_message.chat.id if target_message.chat else 0
+            c_res = await db.execute(select(Client).where(Client.telegram_id == tg_id, Client.deleted.is_(False)))
+            client = c_res.scalars().first()
+
+        visits = client.total_visits if client and client.total_visits else 0
+        is_bl = client.is_blacklisted if client else False
+        is_req = (dep_mode == "ALL") or (dep_mode == "FIRST_TIME" and visits == 0) or is_bl
+        if is_req and dep_val > Decimal("0.00"):
+            deposit_line = f"💳 <b>До сплати (передоплата для фіксації запису):</b> {int(dep_val)} ₴\n\n"
 
     summary_text = (
         f"📋 <b>Підтвердження запису:</b>\n\n"
@@ -818,8 +852,8 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
         f"📱 <b>Телефон:</b> {html.escape(client_phone)}\n"
         f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
         f"📅 <b>Дата:</b> {date_str}\n"
-        f"⏰ <b>Час:</b> {start_time}\n"
-        f"💰 <b>Вартість послуги:</b> {int(s_price)} ₴\n\n"
+        f"⏰ <b>Час:</b> {start_time}\n\n"
+        f"{deposit_line}"
         f"Будь ласка, перевірте дані та підтвердіть запис:"
     )
     if is_callback:
@@ -1044,7 +1078,18 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
         if discount_p > 0:
             srv_price = Decimal(str(round(float(srv_price) * (100 - discount_p) / 100.0, 2)))
 
-        deposit_required = st_map.get("deposit_required", "false").lower() == "true"
+        deposit_mode = st_map.get("deposit_mode", "NONE")
+        if st_map.get("deposit_required", "false").lower() == "true":
+            deposit_mode = "ALL"
+
+        is_first_time = (client.total_visits or 0) == 0
+        if deposit_mode == "ALL":
+            deposit_required = True
+        elif deposit_mode == "FIRST_TIME":
+            deposit_required = is_first_time
+        else:
+            deposit_required = False
+
         deposit_val = Decimal(st_map.get("deposit_amount", "200.00")) if deposit_required else Decimal("0.00")
 
         if client.is_blacklisted:
@@ -1130,7 +1175,6 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
         f"📅 Дата: <b>{date_str}</b>\n"
         f"⏰ Час: <b>{start_time}</b>\n"
         f"💅 Процедура: <b>{html.escape(srv_title)}</b>\n"
-        f"💰 Загальна вартість: <b>{int(srv_price)} ₴</b>\n"
     )
     if discount_p > 0:
         confirmation_msg += f"🎁 <i>Враховано вашу персональну знижку {discount_p}%!</i>\n"
@@ -1140,7 +1184,7 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
 
     if deposit_required and deposit_val > Decimal("0.00"):
         confirmation_msg += (
-            f"⚠️ <b>Увага: для підтвердження потрібен завдаток {int(deposit_val)} грн.</b>\n"
+            f"⚠️ <b>Увага: для фіксації запису потрібна передоплата {int(deposit_val)} ₴.</b>\n"
             f"Будь ласка, здійсніть оплату протягом 60 хвилин:\n"
             f"💳 <b>Карта:</b> <code>{html.escape(card_details)}</code>\n"
             f"🏺 <b>Monobank Банка:</b> {html.escape(jar_link)}\n\n"
@@ -1148,7 +1192,7 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
         )
         await state.set_state(ReceiptUploadStates.waiting_for_photo)
     else:
-        confirmation_msg += "✅ Запис прийнято! Майстер підтвердить його найближчим часом. Чекаємо на вас у студії."
+        confirmation_msg += "✅ Запис прийнято! Майстер підтвердить його найближчим часом. Чекаємо на вас у студії JuNail."
 
     try:
         await callback.message.edit_text(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
@@ -1180,31 +1224,78 @@ async def process_receipt_photo(message: Message, state: FSMContext) -> None:
             .order_by(Appointment.created_at.desc())
         )
         apt = (await db.execute(stmt)).scalars().first()
-        if not apt or not apt.master or not apt.master.telegram_chat_id:
+        if not apt:
             await message.answer("Дякуємо за фото! Наразі у вас немає записів, що очікують на оплату завдатку.")
             return
 
         from app.bot.bot_instance import bot
-        if bot:
-            photo_file_id = message.photo[-1].file_id
+        if bot and message.photo:
+            photo = message.photo[-1]
+            photo_file_id = photo.file_id
+
+            # 1. Download and compress receipt to Base64
+            base64_receipt = ""
+            try:
+                buf = io.BytesIO()
+                await message.bot.download(photo, destination=buf)
+                raw_bytes = buf.getvalue()
+                from PIL import Image
+                img = Image.open(io.BytesIO(raw_bytes))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.thumbnail((800, 800))
+                out_buf = io.BytesIO()
+                img.save(out_buf, format="JPEG", quality=75, optimize=True)
+                base64_receipt = f"data:image/jpeg;base64,{base64.b64encode(out_buf.getvalue()).decode('ascii')}"
+            except Exception as e:
+                logger.error("Failed to process receipt image: %s", e)
+
+            if base64_receipt:
+                apt.receipt_photo_url = base64_receipt
+                apt.mark_updated()
+                await db.commit()
+
+            # 2. Collect all masters to notify
+            recipients = set()
+            if apt.master and apt.master.telegram_chat_id:
+                recipients.add(apt.master.telegram_chat_id)
+
+            all_masters = (await db.execute(select(Master).where(Master.is_active.is_(True), Master.deleted.is_(False)))).scalars().all()
+            for m in all_masters:
+                if m.telegram_chat_id:
+                    recipients.add(m.telegram_chat_id)
+
+            env_ids = os.getenv("MASTER_CHAT_ID", "").split(",")
+            for eid in env_ids:
+                eid = eid.strip()
+                if eid.lstrip("-").isdigit():
+                    recipients.add(int(eid))
+
+            st_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
+            st_map = {s.key: s.value for s in st_res.scalars().all()}
+            db_chat_id = st_map.get("master_chat_id", "").strip()
+            if db_chat_id.lstrip("-").isdigit():
+                recipients.add(int(db_chat_id))
+
             caption = (
                 f"🧾 <b>Чек про оплату завдатку!</b>\n\n"
                 f"👤 Клієнт: <b>{html.escape(client.first_name)}</b> ({html.escape(client.phone)})\n"
                 f"📅 Дата: <b>{apt.date}</b> ({apt.start_time})\n"
                 f"💰 Сума завдатку: <b>{int(apt.deposit_amount)} грн</b>"
             )
-            try:
-                await bot.send_photo(
-                    chat_id=apt.master.telegram_chat_id,
-                    photo=photo_file_id,
-                    caption=caption,
-                    reply_markup=get_master_receipt_approval_keyboard(apt.id),
-                    parse_mode="HTML"
-                )
-                await message.answer("✅ <b>Ваш чек отримано!</b> Майстер перевірить його найближчим часом та підтвердить запис.", parse_mode="HTML")
-            except Exception as e:
-                logger.error("Failed to forward receipt photo to master: %s", e)
-                await message.answer("Сталася помилка при надсиланні чека. Будь ласка, повідомте майстра напряму.")
+            for chat_id in recipients:
+                try:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo_file_id,
+                        caption=caption,
+                        reply_markup=get_master_receipt_approval_keyboard(apt.id),
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error("Failed to forward receipt photo to chat %s: %s", chat_id, e)
+
+            await message.answer("✅ <b>Ваш чек отримано!</b> Майстер перевірить його найближчим часом та підтвердить запис.", parse_mode="HTML")
     await state.clear()
 
 

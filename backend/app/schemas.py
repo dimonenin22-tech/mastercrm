@@ -98,6 +98,7 @@ class AppointmentDto(BaseModel):
     total_price: Decimal
     deposit_amount: Decimal = Decimal("0.00")
     is_deposit_paid: bool = False
+    receipt_photo_url: Optional[str] = ""
     cancellation_reason: Optional[str] = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

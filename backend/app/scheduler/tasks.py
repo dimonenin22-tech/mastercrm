@@ -212,7 +212,11 @@ async def send_post_visit_and_14day_checks() -> None:
 
         stmt_comp = (
             select(Appointment)
-            .options(selectinload(Appointment.client), selectinload(Appointment.notifications))
+            .options(
+                selectinload(Appointment.client),
+                selectinload(Appointment.service),
+                selectinload(Appointment.notifications)
+            )
             .where(
                 Appointment.status == "COMPLETED",
                 Appointment.updated_at <= cutoff_recent,
@@ -311,8 +315,8 @@ async def send_post_visit_and_14day_checks() -> None:
 
 
 def setup_scheduler() -> None:
-    scheduler.add_job(check_deposit_timeouts, "interval", minutes=10, id="deposit_timeouts")
-    scheduler.add_job(send_24h_and_2h_reminders, "interval", minutes=10, id="reminders_24h_2h")
-    scheduler.add_job(send_post_visit_and_14day_checks, "interval", minutes=10, id="post_visit_and_14d")
+    scheduler.add_job(check_deposit_timeouts, "interval", minutes=1, id="deposit_timeouts")
+    scheduler.add_job(send_24h_and_2h_reminders, "interval", minutes=1, id="reminders_24h_2h")
+    scheduler.add_job(send_post_visit_and_14day_checks, "interval", minutes=1, id="post_visit_and_14d")
     scheduler.start()
-    logger.info("APScheduler started with 10-minute interval background jobs.")
+    logger.info("APScheduler started with 1-minute interval background jobs.")

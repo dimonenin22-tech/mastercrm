@@ -64,6 +64,7 @@ data class AppointmentEntity(
     val totalPrice: Double,
     val depositAmount: Double,
     val isDepositPaid: Boolean,
+    val receiptPhotoUrl: String? = "",
     val cancellationReason: String?,
     val deleted: Boolean,
     val version: Int,

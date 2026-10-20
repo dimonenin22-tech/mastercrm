@@ -1,5 +1,7 @@
 package com.mastercrm
 
+import android.content.Intent
+import com.mastercrm.data.service.BookingSyncService
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -75,9 +77,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Perform background sync periodically every 30s while logged in
+                // Perform background sync periodically while logged in
                 LaunchedEffect(currentScreen) {
                     if (app.authRepository.isLoggedIn()) {
+                        try {
+                            val syncServiceIntent = Intent(this@MainActivity, BookingSyncService::class.java)
+                            startService(syncServiceIntent)
+                        } catch (e: Exception) {
+                            // Safe fallback
+                        }
                         while (true) {
                             app.syncRepository.performSync()
                             delay(30_000L)

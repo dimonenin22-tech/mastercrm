@@ -153,6 +153,7 @@ class Appointment(Base, BaseMixin):
     total_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     deposit_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     is_deposit_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    receipt_photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     cancellation_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
 
     master: Mapped["Master"] = relationship("Master", back_populates="appointments")
@@ -173,15 +174,15 @@ class VisitBrief(Base, BaseMixin):
     material_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     nail_condition: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     coffee_prefs: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
-    photo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
+    photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     coating_condition: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
     nail_plate_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
     cuticle_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="")
     base_gel_used: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
     design_and_length: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
     health_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
-    photo_before_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
-    photo_after_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
+    photo_before_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
+    photo_after_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
 
     appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="visit_brief")
 
@@ -378,8 +379,8 @@ class Photo(Base, BaseMixin):
     appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True, index=True)
     client_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("clients.id"), nullable=True, index=True)
     photo_type: Mapped[str] = mapped_column(String(32), default="REFERENCE", nullable=False)  # BEFORE, AFTER, RECEIPT, REFERENCE
-    file_url: Mapped[str] = mapped_column(String(512), nullable=False)
-    thumbnail_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default="")
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
 
     appointment: Mapped[Optional["Appointment"]] = relationship("Appointment")
     client: Mapped[Optional["Client"]] = relationship("Client")

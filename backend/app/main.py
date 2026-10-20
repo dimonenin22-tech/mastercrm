@@ -58,6 +58,7 @@ async def init_and_seed_db() -> None:
             "ALTER TABLE reviews ADD COLUMN photo_url TEXT DEFAULT ''",
             "ALTER TABLE reviews ADD COLUMN tg_file_id TEXT DEFAULT ''",
             "ALTER TABLE reviews ADD COLUMN review_type TEXT DEFAULT 'POST_VISIT'",
+            "ALTER TABLE appointments ADD COLUMN receipt_photo_url TEXT DEFAULT ''",
         ]:
             try:
                 await conn.execute(text(col_sql))
@@ -69,6 +70,7 @@ async def init_and_seed_db() -> None:
         default_settings = {
             "app_mode": ("SOLO", "Режим роботи: SOLO або STUDIO"),
             "deposit_required": ("false", "Чи потрібен обов'язковий завдаток: true/false"),
+            "deposit_mode": ("NONE", "Режим передоплати: NONE, FIRST_TIME, ALL"),
             "deposit_amount": ("200", "Сума завдатку в грн"),
             "card_details": ("5375 4141 1234 5678 (Анастасія В.)", "Реквізити банківської картки"),
             "jar_link": ("https://send.monobank.ua/jar/123456", "Посилання на банку Monobank"),
@@ -80,6 +82,13 @@ async def init_and_seed_db() -> None:
             res = await db.execute(select(StudioSetting).where(StudioSetting.key == k))
             if not res.scalar_one_or_none():
                 db.add(StudioSetting(key=k, value=v, description=desc))
+
+        # One-time SQL fix: tops/bases unit to мл
+        try:
+            await db.execute(text("UPDATE products SET unit = 'мл' WHERE (name LIKE '%ml%' OR name LIKE '%мл%' OR name LIKE '%Топ%' OR name LIKE '%База%') AND unit = 'шт'"))
+            await db.commit()
+        except Exception:
+            pass
 
         # 2. Seed Default Owner Master
         res_m = await db.execute(select(Master).where(Master.id == "m-01"))
@@ -158,17 +167,17 @@ async def init_and_seed_db() -> None:
             p1 = Product(
                 id="prod-01",
                 name="База каучукова Rubber Base 15ml",
-                unit="шт",
-                current_stock=Decimal("12.00"),
-                min_stock_alert=Decimal("3.00"),
+                unit="мл",
+                current_stock=Decimal("30.00"),
+                min_stock_alert=Decimal("5.00"),
                 purchase_price=Decimal("280.00"),
             )
             p2 = Product(
                 id="prod-02",
                 name="Топ без липкого шару No Wipe Top 15ml",
-                unit="шт",
-                current_stock=Decimal("8.00"),
-                min_stock_alert=Decimal("2.00"),
+                unit="мл",
+                current_stock=Decimal("30.00"),
+                min_stock_alert=Decimal("5.00"),
                 purchase_price=Decimal("290.00"),
             )
             p3 = Product(

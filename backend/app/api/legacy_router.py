@@ -675,6 +675,7 @@ async def unified_exec(
                 "total_price": float(a.total_price or 0.0),
                 "deposit_amount": float(getattr(a, "deposit_amount", 0.0) or 0.0),
                 "is_deposit_paid": bool(getattr(a, "is_deposit_paid", False)),
+                "receipt_photo_url": str(getattr(a, "receipt_photo_url", "") or ""),
                 "cancellation_reason": str(a.cancellation_reason or ""),
                 "created_at": a.created_at.isoformat() if a.created_at else now_iso,
                 "updated_at": a.updated_at.isoformat() if a.updated_at else now_iso,
@@ -1764,13 +1765,14 @@ async def unified_exec(
         os.makedirs(upload_dir, exist_ok=True)
         file_path = os.path.join(upload_dir, filename)
 
+        raw_b64 = b64_data
         if b64_data:
             if "," in b64_data:
                 b64_data = b64_data.split(",", 1)[1]
             with open(file_path, "wb") as f:
                 f.write(base64.b64decode(b64_data))
 
-        file_url = f"/uploads/{filename}"
+        file_url = raw_b64 if raw_b64 and raw_b64.startswith("data:") else (f"data:image/jpeg;base64,{b64_data}" if b64_data else f"/uploads/{filename}")
         photo = Photo(
             client_id=c_id,
             appointment_id=apt_id,

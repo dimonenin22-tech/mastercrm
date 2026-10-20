@@ -140,6 +140,7 @@ class SyncRepository(
                             totalPrice = dto.totalPrice,
                             depositAmount = dto.depositAmount,
                             isDepositPaid = dto.isDepositPaid,
+                            receiptPhotoUrl = dto.receiptPhotoUrl ?: "",
                             cancellationReason = dto.cancellationReason ?: "",
                             deleted = dto.deleted,
                             version = dto.version,

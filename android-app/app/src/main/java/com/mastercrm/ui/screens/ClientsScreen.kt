@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -402,6 +403,8 @@ fun ClientDetailBottomSheet(
     val briefs by app.database.visitBriefDao().getByClientIdFlow(client.id).collectAsState(initial = emptyList())
     val latestBrief = briefs.firstOrNull()
     val reviews by app.database.reviewDao().getReviewsForClientFlow(client.id).collectAsState(initial = emptyList())
+    val allServices by app.database.serviceDao().getAllFlow().collectAsState(initial = emptyList())
+    var viewingPhotoUrl by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -588,6 +591,161 @@ fun ClientDetailBottomSheet(
                 }
             }
 
+            // Manual Viber & WhatsApp Template Sender Card
+            item {
+                val latestApt = appointments.firstOrNull()
+                val srvTitle = allServices.find { it.id == latestApt?.serviceId }?.title ?: "манікюр"
+                val dateStr = latestApt?.date ?: "найближчим часом"
+                val timeStr = latestApt?.startTime ?: "10:00"
+
+                var selectedTemplateType by remember { mutableStateOf("24h") }
+
+                fun buildText(type: String): String {
+                    return when (type) {
+                        "24h" -> "Привіт, ${client.firstName}! Нагадуємо про ваш запис на завтра $dateStr о $timeStr ($srvTitle). Будемо раді вас бачити у студії JuNail!"
+                        "2h" -> "Привіт, ${client.firstName}! Чекаємо на вас сьогодні о $timeStr на $srvTitle у студії JuNail! Якщо виникають запізнення, будь ласка, попередьте."
+                        "deposit" -> "Привіт, ${client.firstName}! Для фіксації вашого запису на $dateStr о $timeStr внесіть, будь ласка, завдаток. Посилання на Моно-банку: https://send.monobank.ua/jar/123456 . Дякуємо!"
+                        "review" -> "${client.firstName}, дякуємо, що відвідали студію JuNail! ✨ Як вам ваші нігтики? Нам дуже важлива ваша думка!"
+                        "2weeks" -> "Привіт, ${client.firstName}! Минуло 2 тижні з вашого візиту на $srvTitle. Як тримається покриття? Будемо раді оновити ваш манікюр!"
+                        else -> ""
+                    }
+                }
+
+                var compiledText by remember(selectedTemplateType, client.firstName, dateStr, timeStr, srvTitle) {
+                    mutableStateOf(buildText(selectedTemplateType))
+                }
+
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Send, contentDescription = null, tint = RosePrimary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("📲 Надіслати шаблон у Viber / WhatsApp", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FilterChip(
+                                selected = selectedTemplateType == "24h",
+                                onClick = {
+                                    selectedTemplateType = "24h"
+                                    compiledText = buildText("24h")
+                                },
+                                label = { Text("🔔 24 год", fontSize = 11.5.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedTemplateType == "2h",
+                                onClick = {
+                                    selectedTemplateType = "2h"
+                                    compiledText = buildText("2h")
+                                },
+                                label = { Text("⏰ 2 год", fontSize = 11.5.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedTemplateType == "deposit",
+                                onClick = {
+                                    selectedTemplateType = "deposit"
+                                    compiledText = buildText("deposit")
+                                },
+                                label = { Text("💳 Завдаток", fontSize = 11.5.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedTemplateType == "review",
+                                onClick = {
+                                    selectedTemplateType = "review"
+                                    compiledText = buildText("review")
+                                },
+                                label = { Text("💖 Відгук", fontSize = 11.5.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedTemplateType == "2weeks",
+                                onClick = {
+                                    selectedTemplateType = "2weeks"
+                                    compiledText = buildText("2weeks")
+                                },
+                                label = { Text("💅 2 тижні", fontSize = 11.5.sp) }
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = compiledText,
+                            onValueChange = { compiledText = it },
+                            label = { Text("Текст повідомлення") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                            maxLines = 6
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val norm = normalizeUkrainianPhone(client.phone)
+                                    if (norm.isNotBlank()) {
+                                        val waUrl = "https://wa.me/$norm?text=${Uri.encode(compiledText)}"
+                                        val waIntent = Intent(Intent.ACTION_VIEW, Uri.parse(waUrl))
+                                        try {
+                                            context.startActivity(waIntent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Не вдалося відкрити WhatsApp", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Некоректний номер телефону", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("🟢 WhatsApp", fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val norm = normalizeUkrainianPhone(client.phone)
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Viber Message", compiledText))
+                                    Toast.makeText(context, "Текст скопійовано для Viber", Toast.LENGTH_SHORT).show()
+
+                                    if (norm.isNotBlank()) {
+                                        try {
+                                            val viberIntent = Intent(Intent.ACTION_VIEW, Uri.parse("viber://chat?number=%2B$norm"))
+                                            context.startActivity(viberIntent)
+                                        } catch (e: Exception) {
+                                            try {
+                                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_TEXT, compiledText)
+                                                    setPackage("com.viber.voip")
+                                                }
+                                                context.startActivity(sendIntent)
+                                            } catch (ex: Exception) {
+                                                Toast.makeText(context, "Viber не знайдено на пристрої", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7360F2)),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("🟣 Viber", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Personal Discount Selector
             item {
                 ElevatedCard(
@@ -681,6 +839,48 @@ fun ClientDetailBottomSheet(
                                     fontSize = 12.sp
                                 )
                             }
+                            if (!latestBrief.photoBeforeUrl.isNullOrBlank() || !latestBrief.photoAfterUrl.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (!latestBrief.photoBeforeUrl.isNullOrBlank()) {
+                                        val beforeBmp = remember(latestBrief.photoBeforeUrl) { decodeBase64ToBitmap(latestBrief.photoBeforeUrl) }
+                                        if (beforeBmp != null) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("Фото До", fontSize = 11.sp, color = Color.Gray)
+                                                Image(
+                                                    bitmap = beforeBmp.asImageBitmap(),
+                                                    contentDescription = "Фото До",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(72.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable { viewingPhotoUrl = latestBrief.photoBeforeUrl }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (!latestBrief.photoAfterUrl.isNullOrBlank()) {
+                                        val afterBmp = remember(latestBrief.photoAfterUrl) { decodeBase64ToBitmap(latestBrief.photoAfterUrl) }
+                                        if (afterBmp != null) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("Фото Після", fontSize = 11.sp, color = Color.Gray)
+                                                Image(
+                                                    bitmap = afterBmp.asImageBitmap(),
+                                                    contentDescription = "Фото Після",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(72.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable { viewingPhotoUrl = latestBrief.photoAfterUrl }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Text("Діагностику ще не заповнено.", color = Color.Gray, fontSize = 12.sp)
                         }
@@ -712,24 +912,57 @@ fun ClientDetailBottomSheet(
                 }
             } else {
                 items(appointments, key = { it.id }) { apt ->
+                    val aptBrief = briefs.find { it.appointmentId == apt.id }
                     ElevatedCard(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("${apt.date} • ${apt.startTime}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(apt.status, color = if (apt.status == "COMPLETED") StatusCompleted else RosePrimary, fontSize = 11.sp)
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("${apt.date} • ${apt.startTime}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(apt.status, color = if (apt.status == "COMPLETED") StatusCompleted else RosePrimary, fontSize = 11.sp)
+                                }
+                                Text("${apt.totalPrice.toInt()} ₴", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
                             }
-                            Text("${apt.totalPrice.toInt()} ₴", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
+                            if (aptBrief != null && (!aptBrief.photoBeforeUrl.isNullOrBlank() || !aptBrief.photoAfterUrl.isNullOrBlank())) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (!aptBrief.photoBeforeUrl.isNullOrBlank()) {
+                                        val bBmp = remember(aptBrief.photoBeforeUrl) { decodeBase64ToBitmap(aptBrief.photoBeforeUrl) }
+                                        if (bBmp != null) {
+                                            Image(
+                                                bitmap = bBmp.asImageBitmap(),
+                                                contentDescription = "Фото До",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(60.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { viewingPhotoUrl = aptBrief.photoBeforeUrl }
+                                            )
+                                        }
+                                    }
+                                    if (!aptBrief.photoAfterUrl.isNullOrBlank()) {
+                                        val aBmp = remember(aptBrief.photoAfterUrl) { decodeBase64ToBitmap(aptBrief.photoAfterUrl) }
+                                        if (aBmp != null) {
+                                            Image(
+                                                bitmap = aBmp.asImageBitmap(),
+                                                contentDescription = "Фото Після",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(60.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { viewingPhotoUrl = aptBrief.photoAfterUrl }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -780,10 +1013,51 @@ fun ClientDetailBottomSheet(
                                         modifier = Modifier
                                             .size(72.dp)
                                             .clip(RoundedCornerShape(8.dp))
+                                            .clickable { viewingPhotoUrl = rev.photoUrl }
                                     )
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!viewingPhotoUrl.isNullOrBlank()) {
+        val fullBmp = remember(viewingPhotoUrl) { decodeBase64ToBitmap(viewingPhotoUrl) }
+        Dialog(onDismissRequest = { viewingPhotoUrl = null }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (fullBmp != null) {
+                        Image(
+                            bitmap = fullBmp.asImageBitmap(),
+                            contentDescription = "Фото огляду",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 450.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Text("Не вдалося відобразити фото", color = Color.Gray)
+                    }
+                    Button(
+                        onClick = { viewingPhotoUrl = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Закрити")
                     }
                 }
             }
