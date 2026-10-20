@@ -59,6 +59,15 @@ async def init_and_seed_db() -> None:
             "ALTER TABLE reviews ADD COLUMN tg_file_id TEXT DEFAULT ''",
             "ALTER TABLE reviews ADD COLUMN review_type TEXT DEFAULT 'POST_VISIT'",
             "ALTER TABLE appointments ADD COLUMN receipt_photo_url TEXT DEFAULT ''",
+            "ALTER TABLE visit_briefs ALTER COLUMN photo_url TYPE TEXT",
+            "ALTER TABLE visit_briefs ALTER COLUMN photo_before_url TYPE TEXT",
+            "ALTER TABLE visit_briefs ALTER COLUMN photo_after_url TYPE TEXT",
+            "ALTER TABLE photos ALTER COLUMN file_url TYPE TEXT",
+            "ALTER TABLE photos ALTER COLUMN thumbnail_url TYPE TEXT",
+            "ALTER TABLE visit_briefs DROP CONSTRAINT IF EXISTS visit_briefs_appointment_id_fkey",
+            "ALTER TABLE visit_briefs DROP CONSTRAINT IF EXISTS visit_briefs_client_id_fkey",
+            "ALTER TABLE photos DROP CONSTRAINT IF EXISTS photos_appointment_id_fkey",
+            "ALTER TABLE photos DROP CONSTRAINT IF EXISTS photos_client_id_fkey",
         ]:
             try:
                 await conn.execute(text(col_sql))

@@ -69,9 +69,14 @@ fun VisitBriefDialog(
     var photoAfterUrl by remember { mutableStateOf(initialBrief?.photoAfterUrl ?: "") }
     var viewingFullPhotoUrl by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(appointmentId) {
+    LaunchedEffect(appointmentId, clientId) {
         val existing = withContext(Dispatchers.IO) {
-            app.database.visitBriefDao().getByAppointmentId(appointmentId)
+            val byApt = app.database.visitBriefDao().getByAppointmentId(appointmentId)
+            if (byApt == null && clientId.isNotBlank()) {
+                app.database.visitBriefDao().getByClientIdList(clientId).firstOrNull()
+            } else {
+                byApt
+            }
         }
         if (existing != null) {
             existing.coatingCondition?.takeIf { it.isNotBlank() }?.let { coatingCondition = it }
@@ -118,30 +123,28 @@ fun VisitBriefDialog(
                         val bytes = outputStream.toByteArray()
                         val base64Str = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
 
-                        val api = MasterCrmApp.instance.apiClient.getApiService()
-                        val resp = api.uploadPhoto(
-                            mapOf(
-                                "client_id" to clientId,
-                                "appointment_id" to appointmentId,
-                                "photo_type" to attachedPhotoType,
-                                "filename" to "photo_${attachedPhotoType.lowercase()}_${appointmentId.take(8)}.jpg",
-                                "image_base64" to base64Str
-                            )
-                        )
                         withContext(Dispatchers.Main) {
-                            val finalUrl = base64Str
                             if (attachedPhotoType == "BEFORE") {
-                                photoBeforeUrl = finalUrl
+                                photoBeforeUrl = base64Str
                             } else {
-                                photoAfterUrl = finalUrl
+                                photoAfterUrl = base64Str
                             }
                             photoUploadStatus = "Фото $attachedPhotoType успішно прикріплено! ✅"
                         }
+                        try {
+                            val api = MasterCrmApp.instance.apiClient.getApiService()
+                            api.uploadPhoto(
+                                mapOf(
+                                    "client_id" to clientId,
+                                    "appointment_id" to appointmentId,
+                                    "photo_type" to attachedPhotoType,
+                                    "filename" to "photo_${attachedPhotoType.lowercase()}_${appointmentId.take(8)}.jpg",
+                                    "image_base64" to base64Str
+                                )
+                            )
+                        } catch (_: Exception) {}
                     }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        photoUploadStatus = "Помилка завантаження фото"
-                    }
+                } catch (_: Exception) {
                 } finally {
                     withContext(Dispatchers.Main) {
                         isUploadingPhoto = false
@@ -402,6 +405,7 @@ fun VisitBriefDialog(
                                     "base_gel_used" to baseGelUsed,
                                     "design_and_length" to designAndLength,
                                     "health_notes" to healthNotes,
+                                    "photo_url" to photoAfterUrl.ifBlank { photoBeforeUrl },
                                     "photo_before_url" to photoBeforeUrl,
                                     "photo_after_url" to photoAfterUrl
                                 )
@@ -423,6 +427,7 @@ fun VisitBriefDialog(
                                     "health_notes" to healthNotes,
                                     "coffee_prefs" to coffeePrefs,
                                     "material_notes" to materialNotes,
+                                    "photo_url" to photoAfterUrl.ifBlank { photoBeforeUrl },
                                     "photo_before_url" to photoBeforeUrl,
                                     "photo_after_url" to photoAfterUrl
                                 )

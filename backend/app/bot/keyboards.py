@@ -111,12 +111,20 @@ def get_services_keyboard(services: list[tuple[str, str, float, int]]) -> Inline
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_time_slots_keyboard(slots: list[str]) -> InlineKeyboardMarkup:
+def get_time_slots_keyboard(slots: list) -> InlineKeyboardMarkup:
     buttons = []
     # 3 slots per row
     row = []
-    for s in slots:
-        row.append(InlineKeyboardButton(text=s, callback_data=f"time:{s}"))
+    for item in slots:
+        if isinstance(item, tuple):
+            time_str, is_passed = item
+        else:
+            time_str, is_passed = item, False
+
+        if is_passed:
+            row.append(InlineKeyboardButton(text=f"▫️{time_str}", callback_data="time:passed"))
+        else:
+            row.append(InlineKeyboardButton(text=time_str, callback_data=f"time:{time_str}"))
         if len(row) == 3:
             buttons.append(row)
             row = []

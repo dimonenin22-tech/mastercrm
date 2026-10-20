@@ -772,6 +772,11 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
 
             dur = srv.duration_minutes + srv.buffer_minutes
             cur_min = day_start
+            kyiv_tz = pytz.timezone(settings.TIMEZONE)
+            now_kyiv = datetime.now(kyiv_tz)
+            today_str = now_kyiv.strftime("%Y-%m-%d")
+            now_minutes = now_kyiv.hour * 60 + now_kyiv.minute
+
             while cur_min + srv.duration_minutes <= day_end:
                 s_slot = cur_min
                 e_slot = cur_min + dur
@@ -783,11 +788,13 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
                 if not conflict:
                     h = cur_min // 60
                     m = cur_min % 60
-                    free_slots.append(f"{h:02d}:{m:02d}")
+                    is_passed = (chosen_date == today_str and cur_min <= now_minutes + 5)
+                    free_slots.append((f"{h:02d}:{m:02d}", is_passed))
                 cur_min += slot_step
 
     await state.set_state(BookingStates.waiting_for_time)
-    if free_slots:
+    has_future_slots = any(not p for _, p in free_slots)
+    if free_slots and has_future_slots:
         text = f"⏰ <b>Крок 4/5: Вільні віконця на {chosen_date}:</b>\nОберіть зручний час:"
         await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard(free_slots), parse_mode="HTML")
     else:
@@ -865,9 +872,17 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
     await target_message.answer(summary_text, reply_markup=get_booking_summary_keyboard(), parse_mode="HTML")
 
 
+@client_router.callback_query(F.data == "time:passed")
+async def process_passed_time_slot(callback: CallbackQuery) -> None:
+    await callback.answer("⏳ Цей час сьогодні вже минув. Будь ласка, оберіть пізніший час або інший день.", show_alert=True)
+
+
 @client_router.callback_query(BookingStates.waiting_for_time, F.data.startswith("time:"))
 async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> None:
     slot_choice = callback.data.split(":", 1)[1]
+    if slot_choice == "passed":
+        await callback.answer("⏳ Цей час сьогодні вже минув. Будь ласка, оберіть пізніший час або інший день.", show_alert=True)
+        return
 
     if slot_choice == "waitlist":
         data = await state.get_data()

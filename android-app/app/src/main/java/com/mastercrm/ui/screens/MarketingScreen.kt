@@ -1243,9 +1243,23 @@ fun MarketingScreen() {
         getRealFreeSlotsForDate = { dateIso ->
             val dayApps = appointmentEntities.filter { it.date == dateIso && !it.status.startsWith("CANCELLED") }
             val standardSlots = listOf("09:00", "11:00", "13:30", "15:30", "18:00")
+            val isToday = try {
+                dateIso == java.time.LocalDate.now(java.time.ZoneId.of("Europe/Kyiv")).toString()
+            } catch (e: Exception) {
+                false
+            }
+            val nowMin = try {
+                java.time.LocalTime.now(java.time.ZoneId.of("Europe/Kyiv")).let { it.hour * 60 + it.minute }
+            } catch (e: Exception) {
+                0
+            }
+
             standardSlots.filter { slot ->
                 val slotParts = slot.split(":")
                 val slotMin = (slotParts.getOrNull(0)?.toIntOrNull() ?: 9) * 60 + (slotParts.getOrNull(1)?.toIntOrNull() ?: 0)
+                if (isToday && slotMin <= nowMin) {
+                    return@filter false
+                }
                 dayApps.none { apt ->
                     val aptStartParts = apt.startTime.split(":")
                     val aptStartMin = (aptStartParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (aptStartParts.getOrNull(1)?.toIntOrNull() ?: 0)

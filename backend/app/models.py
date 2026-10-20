@@ -168,8 +168,8 @@ class Appointment(Base, BaseMixin):
 class VisitBrief(Base, BaseMixin):
     __tablename__ = "visit_briefs"
 
-    appointment_id: Mapped[str] = mapped_column(String(64), ForeignKey("appointments.id"), unique=True, nullable=False)
-    client_id: Mapped[str] = mapped_column(String(64), ForeignKey("clients.id"), nullable=False)
+    appointment_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     master_id: Mapped[str] = mapped_column(String(64), ForeignKey("masters.id"), nullable=False)
     material_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     nail_condition: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
@@ -184,7 +184,7 @@ class VisitBrief(Base, BaseMixin):
     photo_before_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     photo_after_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
 
-    appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="visit_brief")
+    appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="visit_brief", primaryjoin="Appointment.id==VisitBrief.appointment_id", foreign_keys=[appointment_id])
 
 
 class WaitingList(Base, BaseMixin):
@@ -376,14 +376,14 @@ class AppointmentHistory(Base, BaseMixin):
 class Photo(Base, BaseMixin):
     __tablename__ = "photos"
 
-    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True, index=True)
-    client_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("clients.id"), nullable=True, index=True)
+    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    client_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     photo_type: Mapped[str] = mapped_column(String(32), default="REFERENCE", nullable=False)  # BEFORE, AFTER, RECEIPT, REFERENCE
     file_url: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
 
-    appointment: Mapped[Optional["Appointment"]] = relationship("Appointment")
-    client: Mapped[Optional["Client"]] = relationship("Client")
+    appointment: Mapped[Optional["Appointment"]] = relationship("Appointment", primaryjoin="Appointment.id==Photo.appointment_id", foreign_keys=[appointment_id])
+    client: Mapped[Optional["Client"]] = relationship("Client", primaryjoin="Client.id==Photo.client_id", foreign_keys=[client_id])
 
 
 class Supplier(Base, BaseMixin):

@@ -7,6 +7,7 @@ import secrets
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
+import pytz
 
 import base64
 import os
@@ -524,7 +525,16 @@ async def unified_exec(
         # 4. Generate candidate slots
         available_slots = []
         current_min = day_start
+        kyiv_tz = pytz.timezone(settings.TIMEZONE)
+        now_kyiv = datetime.now(kyiv_tz)
+        is_today = (date_str == now_kyiv.strftime("%Y-%m-%d"))
+        now_minutes = now_kyiv.hour * 60 + now_kyiv.minute
+
         while current_min + srv.duration_minutes <= day_end:
+            if is_today and current_min <= now_minutes + 5:
+                current_min += slot_step
+                continue
+
             slot_start = current_min
             slot_end = current_min + duration_with_buffer
             
@@ -1048,6 +1058,8 @@ async def unified_exec(
             apt_obj = await db.get(Appointment, apt_id)
             if apt_obj:
                 client_id = apt_obj.client_id
+        if not client_id:
+            client_id = "unknown"
 
         if not vb:
             custom_vb_id = body.get("id")
@@ -1758,8 +1770,7 @@ async def unified_exec(
         b64_data = body.get("image_base64")
         filename = body.get("filename") or f"photo_{uuid.uuid4().hex[:8]}.jpg"
 
-        if not c_id:
-            return ApiResponse.fail("BAD_REQUEST", "client_id обов'язковий")
+        c_id = body.get("client_id") or "unknown"
 
         upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
         os.makedirs(upload_dir, exist_ok=True)
