@@ -796,8 +796,7 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
                 cur_min += slot_step
 
     await state.set_state(BookingStates.waiting_for_time)
-    has_future_slots = any(not p for _, p in free_slots)
-    if free_slots and has_future_slots:
+    if free_slots:
         text = f"⏰ <b>Крок 4/5: Вільні віконця на {chosen_date}:</b>\nОберіть зручний час:"
         await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard(free_slots), parse_mode="HTML")
     else:
