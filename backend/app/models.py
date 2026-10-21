@@ -159,7 +159,7 @@ class Appointment(Base, BaseMixin):
     master: Mapped["Master"] = relationship("Master", back_populates="appointments")
     client: Mapped["Client"] = relationship("Client", back_populates="appointments")
     service: Mapped["Service"] = relationship("Service", back_populates="appointments")
-    visit_brief: Mapped[Optional["VisitBrief"]] = relationship("VisitBrief", back_populates="appointment", uselist=False, cascade="all, delete-orphan")
+    visit_brief: Mapped[Optional["VisitBrief"]] = relationship("VisitBrief", back_populates="appointment", uselist=False, cascade="all, delete-orphan", primaryjoin="Appointment.id==VisitBrief.appointment_id", foreign_keys="VisitBrief.appointment_id")
     incomes: Mapped[list["Income"]] = relationship("Income", back_populates="appointment")
     reviews: Mapped[list["Review"]] = relationship("Review", back_populates="appointment")
     notifications: Mapped[list["NotificationLog"]] = relationship("NotificationLog", back_populates="appointment")
