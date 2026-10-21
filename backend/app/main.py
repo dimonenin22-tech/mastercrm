@@ -213,17 +213,24 @@ async def init_and_seed_db() -> None:
         default_templates = {
             "REMINDER_24H": "🔔 Привіт, {name}! Нагадуємо про ваш запис завтра ({date}) о {time} на послугу «{service}». Чекаємо на вас!",
             "REMINDER_2H": "⏰ Привіт, {name}! Нагадуємо, що ваш візит на «{service}» відбудеться вже сьогодні через 2 години — о {time}!",
-            "REVIEW_10MIN_TEXT_ASK": "💖 Дякуємо за візит, {name}! Як вам результат процедури «{service}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:",
+            "REVIEW_10MIN_TEXT_ASK": "💖 Дякуємо за візит, {name}! Як вам результат процедури «{service}»? Будь ласка, оцініть якість роботи майстра від 1 до 5 зірочок нижче:",
             "REVIEW_10MIN_AUTO_REPLY": "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️",
-            "REVIEW_10MIN_STARS_ASK": "✨ А тепер оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:",
+            "REVIEW_10MIN_STARS_ASK": "❤️ Дякуємо за вашу оцінку {rating} ⭐! Напишіть, будь ласка, у відповідь кілька слів про ваші враження — що сподобалося найбільше або на що варто звернути увагу 👇",
             "WEAR_2WEEKS_TEXT_ASK": "💅 Привіт, {name}! Минуло 2 тижні з вашого візиту («{service}»). Напишіть, будь ласка, як носиться покриття? Чи все тримається ідеально?",
             "WEAR_2WEEKS_PHOTO_ASK": "📸 Дякуємо за відповідь! А тепер надішліть, будь ласка, у цей чат фото стану ваших нігтів зараз (або натисніть кнопку нижче, щоб продовжити без фото):",
             "WEAR_2WEEKS_FINAL_BOOK_OFFER": "💖 Дякуємо за ваш звіт та фото! Настав час планувати наступну корекцію — оберіть зручне віконце завчасно за кнопкою нижче:",
         }
         for k, v in default_templates.items():
             t_res = await db.execute(select(ReminderTemplate).where(ReminderTemplate.type == k))
-            if not t_res.scalar_one_or_none():
+            tmpl_existing = t_res.scalar_one_or_none()
+            if not tmpl_existing:
                 db.add(ReminderTemplate(type=k, template_text=v, is_active=True))
+            elif k == "REVIEW_10MIN_TEXT_ASK" and "зірочок" not in (tmpl_existing.template_text or ""):
+                tmpl_existing.template_text = v
+                tmpl_existing.mark_updated()
+            elif k == "REVIEW_10MIN_STARS_ASK" and "оцінку" not in (tmpl_existing.template_text or ""):
+                tmpl_existing.template_text = v
+                tmpl_existing.mark_updated()
 
         await db.commit()
     logger.info("Database seeding completed.")

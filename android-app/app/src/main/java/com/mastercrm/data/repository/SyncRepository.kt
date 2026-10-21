@@ -8,6 +8,7 @@ import com.mastercrm.data.remote.ApiClient
 import com.mastercrm.data.remote.dto.*
 import com.mastercrm.MasterCrmApp
 import com.mastercrm.ui.notifications.BookingNotificationHelper
+import retrofit2.HttpException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -61,8 +62,17 @@ class SyncRepository(
                     _syncEvents.emit("Конфлікт: $errMessage")
                 }
             } catch (e: Exception) {
-                // Network unreachable or server timeout: leave in queue for next sync attempt
-                _syncEvents.emit("Мережа недоступна, зміни збережено офлайн")
+                if (e is HttpException) {
+                    val code = e.code()
+                    val errBody = try { e.response()?.errorBody()?.string() } catch (_: Exception) { null }
+                    android.util.Log.e("SyncRepo", "HTTP error $code executing ${mutation.action}: $errBody", e)
+                    if (code in 400..499) {
+                        db.outboxDao().delete(mutation)
+                    }
+                    _syncEvents.emit("Помилка сервера ($code): спробуйте знову")
+                } else {
+                    _syncEvents.emit("Мережа недоступна, зміни збережено офлайн")
+                }
                 break
             }
         }

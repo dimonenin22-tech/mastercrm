@@ -2,6 +2,7 @@ import html
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 import pytz
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -27,11 +28,21 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone(settings.TIMEZONE))
 
 
-async def render_bot_template(db, key: str, default_text: str, name: str = "", date: str = "", time: str = "", service: str = "") -> str:
+async def render_bot_template(db, key: str, default_text: str, name: str = "", date: str = "", time: str = "", service: str = "", rating: Any = "", **kwargs: Any) -> str:
     stmt = select(ReminderTemplate).where(ReminderTemplate.type == key, ReminderTemplate.deleted.is_(False))
     tmpl = (await db.execute(stmt)).scalar_one_or_none()
-    text = (tmpl.template_text if tmpl and tmpl.template_text else default_text)
-    return text.replace("{name}", name).replace("{date}", date).replace("{time}", time).replace("{service}", service)
+    # Якщо в базі старий текст без зірочок — використовуємо новий актуальний текст
+    if key == "REVIEW_10MIN_TEXT_ASK" and tmpl and "зірочок" not in (tmpl.template_text or ""):
+        text = default_text
+    else:
+        text = (tmpl.template_text if tmpl and tmpl.template_text else default_text)
+    return (
+        text.replace("{name}", str(name))
+            .replace("{date}", str(date))
+            .replace("{time}", str(time))
+            .replace("{service}", str(service))
+            .replace("{rating}", str(rating))
+    )
 
 
 def get_kyiv_now() -> datetime:

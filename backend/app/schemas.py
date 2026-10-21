@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Generic, Optional, TypeVar
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 T = TypeVar("T")
 
@@ -83,6 +83,14 @@ class ServiceDto(BaseModel):
 
 class AppointmentDto(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('deleted', mode='before')
+    def parse_deleted(cls, v):
+        return False if v is None else bool(v)
+
+    @field_validator('version', mode='before')
+    def parse_version(cls, v):
+        return 1 if v is None else int(v)
 
     id: str
     master_id: str

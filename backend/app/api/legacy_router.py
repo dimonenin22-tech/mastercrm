@@ -753,13 +753,6 @@ async def unified_exec(
 
             # Check collision if start_time != "За домовленістю"
             if start_time != "За домовленістю":
-                kyiv_tz = pytz.timezone(settings.TIMEZONE)
-                now_kyiv = datetime.now(kyiv_tz)
-                today_kyiv = now_kyiv.strftime("%Y-%m-%d")
-                now_minutes = now_kyiv.hour * 60 + now_kyiv.minute
-                if date_str == today_kyiv and time_to_minutes(start_time) < (now_minutes - 5):
-                    return ApiResponse.fail("TIME_PASSED", "Обраний час сьогодні вже минув. Оберіть пізніший час.")
-
                 slot_s = time_to_minutes(start_time)
                 slot_e = time_to_minutes(end_time) + srv.buffer_minutes
 
@@ -776,10 +769,7 @@ async def unified_exec(
                     ex_s = time_to_minutes(ex.start_time)
                     ex_e = time_to_minutes(ex.end_time)
                     if slot_s < ex_e and slot_e > ex_s:
-                        return JSONResponse(
-                            status_code=status.HTTP_409_CONFLICT,
-                            content=ApiResponse.fail("RESOURCE_BUSY", "Вибраний час уже зайнятий іншим клієнтом").model_dump()
-                        )
+                        return ApiResponse.fail("RESOURCE_BUSY", "Вибраний час уже зайнятий іншим клієнтом")
 
                 # Check shared resource capacity in STUDIO mode
                 app_mode_res = await db.execute(select(StudioSetting).where(StudioSetting.key == "app_mode"))
@@ -865,6 +855,8 @@ async def unified_exec(
                         deposit_amount=deposit_amount,
                         is_deposit_paid=is_deposit_paid,
                         cancellation_reason="",
+                        deleted=False,
+                        version=1,
                         created_at=utc_now(),
                         updated_at=utc_now()
                     )
@@ -900,7 +892,7 @@ async def unified_exec(
 
             await db.commit()
             await db.refresh(new_apt)
-            return ApiResponse.ok(AppointmentDto.model_validate(new_apt).model_dump())
+            return ApiResponse.ok(AppointmentDto.model_validate(new_apt).model_dump(mode='json'))
 
     # 6. Action: appointment_update_status
     if action == "appointment_update_status":
