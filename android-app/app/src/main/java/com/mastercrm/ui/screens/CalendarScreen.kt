@@ -268,9 +268,8 @@ fun CalendarScreen() {
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(appointments, key = { it.id }) { apt ->
