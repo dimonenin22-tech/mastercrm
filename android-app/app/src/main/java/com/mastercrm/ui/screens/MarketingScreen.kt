@@ -514,7 +514,7 @@ fun MarketingStudioScreen(
 
     // --- Стан для Вільних віконець ---
     val next7Days = remember {
-        (0..6).map { LocalDate.now().plusDays(it.toLong()) }
+        (0..6).map { LocalDate.now(java.time.ZoneId.of("Europe/Kyiv")).plusDays(it.toLong()) }
     }
     var selectedDate by remember { mutableStateOf(next7Days.first()) }
     val dateIso = selectedDate.toString()
@@ -523,11 +523,12 @@ fun MarketingStudioScreen(
     }
 
     // Реальні вільні слоти на цей день із БД + можливість вмикати/вимикати та додавати свій час
-    var availableDaySlots by remember(dateIso) {
-        mutableStateOf(getRealFreeSlotsForDate(dateIso).ifEmpty { listOf("10:00", "12:00", "14:30", "16:00", "18:00") })
+    val calculatedSlots = getRealFreeSlotsForDate(dateIso)
+    var availableDaySlots by remember(dateIso, calculatedSlots) {
+        mutableStateOf(calculatedSlots)
     }
-    var activeSlots by remember(dateIso) {
-        mutableStateOf(availableDaySlots.toSet())
+    var activeSlots by remember(dateIso, calculatedSlots) {
+        mutableStateOf(calculatedSlots.toSet())
     }
     var showAddSlotDialog by remember { mutableStateOf(false) }
     var customTimeInput by remember { mutableStateOf("") }
@@ -1242,22 +1243,18 @@ fun MarketingScreen() {
         studioName = "MasterCRM Studio",
         getRealFreeSlotsForDate = { dateIso ->
             val dayApps = appointmentEntities.filter { it.date == dateIso && !it.status.startsWith("CANCELLED") }
-            val standardSlots = listOf("09:00", "11:00", "13:30", "15:30", "18:00")
-            val isToday = try {
-                dateIso == java.time.LocalDate.now(java.time.ZoneId.of("Europe/Kyiv")).toString()
-            } catch (e: Exception) {
-                false
-            }
-            val nowMin = try {
-                java.time.LocalTime.now(java.time.ZoneId.of("Europe/Kyiv")).let { it.hour * 60 + it.minute }
-            } catch (e: Exception) {
-                0
-            }
+            val standardSlots = listOf("09:00", "10:00", "11:00", "12:00", "13:30", "15:00", "16:30", "18:00")
+            val todayDevice = java.time.LocalDate.now().toString()
+            val todayKyiv = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Kyiv")).toString()
+            val isToday = (dateIso == todayDevice || dateIso == todayKyiv)
+            val nowMinDevice = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+            val nowMinKyiv = java.time.LocalTime.now(java.time.ZoneId.of("Europe/Kyiv")).let { it.hour * 60 + it.minute }
+            val effectiveNowMin = maxOf(nowMinDevice, nowMinKyiv)
 
             standardSlots.filter { slot ->
                 val slotParts = slot.split(":")
                 val slotMin = (slotParts.getOrNull(0)?.toIntOrNull() ?: 9) * 60 + (slotParts.getOrNull(1)?.toIntOrNull() ?: 0)
-                if (isToday && slotMin <= nowMin) {
+                if (isToday && slotMin <= effectiveNowMin + 5) {
                     return@filter false
                 }
                 dayApps.none { apt ->

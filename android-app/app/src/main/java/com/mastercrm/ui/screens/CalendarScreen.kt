@@ -641,12 +641,23 @@ fun CreateAppointmentDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, phone: String, srvId: String, time: String, price: Double) -> Unit
 ) {
+    val todayStr = remember { java.time.LocalDate.now().toString() }
+    val initialTime = remember(selectedDate) {
+        if (selectedDate == todayStr) {
+            val now = java.time.LocalTime.now()
+            val nextHour = (now.hour + 1).coerceAtMost(20)
+            String.format("%02d:00", nextHour)
+        } else {
+            "10:00"
+        }
+    }
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("10:00") }
+    var time by remember(selectedDate) { mutableStateOf(initialTime) }
     var selectedServiceId by remember { mutableStateOf(services.firstOrNull()?.id ?: "") }
     var priceText by remember { mutableStateOf(services.firstOrNull()?.price?.toInt()?.toString() ?: "500") }
     var serviceMenuExpanded by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val currentService = services.firstOrNull { it.id == selectedServiceId }
 
     AlertDialog(
@@ -711,11 +722,23 @@ fun CreateAppointmentDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (!errorMessage.isNullOrBlank()) {
+                    Text(errorMessage!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
+                    if (selectedDate == todayStr) {
+                        val timeParts = time.split(":")
+                        val enteredMin = (timeParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (timeParts.getOrNull(1)?.toIntOrNull() ?: 0)
+                        val now = java.time.LocalTime.now()
+                        if (enteredMin < (now.hour * 60 + now.minute)) {
+                            errorMessage = "Обраний час вже минув сьогодні!"
+                            return@Button
+                        }
+                    }
                     val p = priceText.toDoubleOrNull() ?: 500.0
                     onConfirm(name, phone, selectedServiceId, time, p)
                 },

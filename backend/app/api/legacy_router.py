@@ -753,6 +753,13 @@ async def unified_exec(
 
             # Check collision if start_time != "За домовленістю"
             if start_time != "За домовленістю":
+                kyiv_tz = pytz.timezone(settings.TIMEZONE)
+                now_kyiv = datetime.now(kyiv_tz)
+                today_kyiv = now_kyiv.strftime("%Y-%m-%d")
+                now_minutes = now_kyiv.hour * 60 + now_kyiv.minute
+                if date_str == today_kyiv and time_to_minutes(start_time) < (now_minutes - 5):
+                    return ApiResponse.fail("TIME_PASSED", "Обраний час сьогодні вже минув. Оберіть пізніший час.")
+
                 slot_s = time_to_minutes(start_time)
                 slot_e = time_to_minutes(end_time) + srv.buffer_minutes
 

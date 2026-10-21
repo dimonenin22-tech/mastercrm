@@ -378,6 +378,55 @@ fun StudioSettingsTab(
                         color = RosePrimary,
                         fontSize = 11.5.sp
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider(color = Color.LightGray.copy(alpha = 0.4f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val pm = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
+                    var isIgnoringBattery by remember {
+                        mutableStateOf(pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Фонова синхронізація 24/7", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                if (isIgnoringBattery) "✅ Фоновий режим без обмежень активовано"
+                                else "Вимкніть економію батареї, щоб пуші приходили миттєво при закритому додатку",
+                                color = if (isIgnoringBattery) Color(0xFF2E7D32) else Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    if (!isIgnoringBattery) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    try {
+                                        val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("🔋 Дозволити роботу у фоні (Вимкнути економію батареї)", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }

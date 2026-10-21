@@ -82,10 +82,22 @@ class MainActivity : ComponentActivity() {
                     if (app.authRepository.isLoggedIn()) {
                         try {
                             val syncServiceIntent = Intent(this@MainActivity, BookingSyncService::class.java)
-                            startService(syncServiceIntent)
+                            ContextCompat.startForegroundService(this@MainActivity, syncServiceIntent)
                         } catch (e: Exception) {
                             // Safe fallback
                         }
+
+                        // Check & request battery optimization exemption
+                        try {
+                            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = android.net.Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            }
+                        } catch (_: Exception) {}
+
                         while (true) {
                             app.syncRepository.performSync()
                             delay(30_000L)

@@ -778,6 +778,10 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
             now_minutes = now_kyiv.hour * 60 + now_kyiv.minute
 
             while cur_min + srv.duration_minutes <= day_end:
+                if chosen_date == today_str and cur_min <= now_minutes + 5:
+                    cur_min += slot_step
+                    continue
+
                 s_slot = cur_min
                 e_slot = cur_min + dur
                 conflict = False
@@ -788,8 +792,7 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
                 if not conflict:
                     h = cur_min // 60
                     m = cur_min % 60
-                    is_passed = (chosen_date == today_str and cur_min <= now_minutes + 5)
-                    free_slots.append((f"{h:02d}:{m:02d}", is_passed))
+                    free_slots.append(f"{h:02d}:{m:02d}")
                 cur_min += slot_step
 
     await state.set_state(BookingStates.waiting_for_time)
@@ -883,6 +886,17 @@ async def process_time_selected(callback: CallbackQuery, state: FSMContext) -> N
     if slot_choice == "passed":
         await callback.answer("⏳ Цей час сьогодні вже минув. Будь ласка, оберіть пізніший час або інший день.", show_alert=True)
         return
+
+
+    data = await state.get_data()
+    chosen_date = data.get("date", "")
+    now_kyiv = datetime.now(pytz.timezone(settings.TIMEZONE))
+    if slot_choice not in ["waitlist", "custom"] and chosen_date == now_kyiv.strftime("%Y-%m-%d"):
+        if time_to_minutes(slot_choice) <= (now_kyiv.hour * 60 + now_kyiv.minute):
+            await callback.answer("⏳ Цей час сьогодні вже минув. Будь ласка, оберіть пізніший час.", show_alert=True)
+            callback.data = f"cal:day:{chosen_date}"
+            await process_date_selected(callback, state)
+            return
 
     if slot_choice == "waitlist":
         data = await state.get_data()
