@@ -388,6 +388,9 @@ fun StudioSettingsTab(
                     var isIgnoringBattery by remember {
                         mutableStateOf(pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false)
                     }
+                    val areNotificationsEnabled = remember(context) {
+                        androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -395,12 +398,19 @@ fun StudioSettingsTab(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Фонова синхронізація 24/7", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Фонова синхронізація 24/7 та сповіщення", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 if (isIgnoringBattery) "✅ Фоновий режим без обмежень активовано"
                                 else "Вимкніть економію батареї, щоб пуші приходили миттєво при закритому додатку",
                                 color = if (isIgnoringBattery) Color(0xFF2E7D32) else Color.Gray,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                if (areNotificationsEnabled) "✅ Дозвіл на показ сповіщень активний"
+                                else "⚠️ Сповіщення вимкнено в системі! Увімкніть, щоб чути звук нових записів",
+                                color = if (areNotificationsEnabled) Color(0xFF2E7D32) else Color(0xFFD32F2F),
                                 fontSize = 12.sp
                             )
                         }
@@ -427,6 +437,40 @@ fun StudioSettingsTab(
                         ) {
                             Text("🔋 Дозволити роботу у фоні (Вимкнути економію батареї)", fontSize = 12.sp)
                         }
+                    }
+
+                    if (!areNotificationsEnabled) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {
+                                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("🔔 Увімкнути сповіщення в системі", fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            com.mastercrm.ui.notifications.BookingNotificationHelper.sendTestNotification(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("🔊 Надіслати тестове сповіщення зі звуком", fontSize = 12.sp)
                     }
                 }
             }

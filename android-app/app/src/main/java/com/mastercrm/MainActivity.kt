@@ -88,7 +88,8 @@ class MainActivity : ComponentActivity() {
                             // Safe fallback
                         }
 
-                        // Check & request battery optimization exemption
+                        // Check & request battery optimization exemption (with delay so notification permission dialog is shown first)
+                        delay(2000L)
                         try {
                             val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
                             if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {

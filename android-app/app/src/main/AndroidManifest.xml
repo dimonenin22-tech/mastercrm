@@ -38,6 +38,16 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <receiver
+            android:name=".data.service.SyncBroadcastReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="com.mastercrm.RESTART_SYNC_SERVICE" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

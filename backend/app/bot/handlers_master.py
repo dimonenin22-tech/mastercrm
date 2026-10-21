@@ -566,15 +566,15 @@ async def process_master_review_mod(callback: CallbackQuery) -> None:
             pass
 
 
-APK_DOWNLOAD_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/download/v2.4.2/JuNailCRM.apk"
-APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/tag/v2.4.2"
+APK_DOWNLOAD_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/download/v2.4.3/JuNailCRM.apk"
+APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/tag/v2.4.3"
 
 
 async def send_app_apk(bot, chat_id: int) -> None:
     await bot.send_chat_action(chat_id=chat_id, action="upload_document")
-    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.2.apk")
+    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.3.apk")
     caption = (
-        "📱 <b>JuNailCRM v2.4.2 — Мобільний застосунок майстра</b>\n\n"
+        "📱 <b>JuNailCRM v2.4.3 — Мобільний застосунок майстра</b>\n\n"
         "▫️ <b>Версія:</b> 2.4.2 (Збірка 242)\n"
         "▫️ <b>Оновлено:</b> 21 жовтня 2026\n"
         "▫️ <b>Особливості версії:</b>\n"

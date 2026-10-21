@@ -9,11 +9,11 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.mastercrm.MainActivity
 import com.mastercrm.MasterCrmApp
-import com.mastercrm.R
 import kotlinx.coroutines.*
 
 class BookingSyncService : Service() {
@@ -37,10 +37,10 @@ class BookingSyncService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "JuNailCRM Фонова синхронізація",
+                "JuNailCRM Синхронізація",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Очікування нових записів онлайн 24/7"
+                description = "Фоновий моніторинг нових записів 24/7"
                 setShowBadge(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
@@ -58,9 +58,9 @@ class BookingSyncService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("JuNailCRM Фонова синхронізація")
-            .setContentText("Очікування нових записів онлайн 24/7")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("JuNailCRM Синхронізація")
+            .setContentText("Фоновий моніторинг нових записів 24/7")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -74,14 +74,21 @@ class BookingSyncService : Service() {
 
         if (syncJob == null || syncJob?.isActive != true) {
             syncJob = serviceScope.launch {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
                 while (isActive) {
+                    val wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JuNailCRM:SyncWakeLock")
                     try {
+                        wakeLock?.acquire(10_000L)
                         val app = MasterCrmApp.instance
                         if (app.authRepository.isLoggedIn()) {
                             app.syncRepository.performSync()
                         }
                     } catch (e: Exception) {
-                        // Safe error recovery in background loop
+                        android.util.Log.e("BookingSyncService", "Background sync exception", e)
+                    } finally {
+                        if (wakeLock?.isHeld == true) {
+                            wakeLock.release()
+                        }
                     }
                     delay(25_000L)
                 }
@@ -92,21 +99,21 @@ class BookingSyncService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         try {
-            val restartServiceIntent = Intent(applicationContext, BookingSyncService::class.java).also {
-                it.setPackage(packageName)
+            val restartServiceIntent = Intent(applicationContext, SyncBroadcastReceiver::class.java).apply {
+                action = SyncBroadcastReceiver.ACTION_RESTART_SYNC
             }
-            val restartServicePendingIntent = PendingIntent.getService(
+            val restartPendingIntent = PendingIntent.getBroadcast(
                 this, 1, restartServiceIntent,
                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
             )
             val alarmService = getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
             alarmService?.set(
-                android.app.AlarmManager.ELAPSED_REALTIME,
+                android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + 2000,
-                restartServicePendingIntent
+                restartPendingIntent
             )
         } catch (e: Exception) {
-            // Ignore
+            android.util.Log.e("BookingSyncService", "Failed to schedule restart", e)
         }
         super.onTaskRemoved(rootIntent)
     }
