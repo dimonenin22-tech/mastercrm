@@ -242,18 +242,20 @@ async def send_post_visit_and_14day_checks() -> None:
                 if bot:
                     c_name = apt.client.first_name if apt.client else "Клієнт"
                     srv_t = apt.service.title if apt.service else "манікюр"
-                    def_10m = f"💖 Дякуємо за візит, {c_name}! Як вам результат процедури «{srv_t}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:"
+                    def_10m = f"💖 Дякуємо за візит, {c_name}! Як вам результат процедури «{srv_t}»? Будь ласка, оцініть якість роботи майстра від 1 до 5 зірочок нижче:"
                     msg = await render_bot_template(
                         db, "REVIEW_10MIN_TEXT_ASK", def_10m,
                         name=c_name, date=apt.date, time=apt.start_time, service=srv_t
                     )
+                    stars_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text=f"{score} ⭐", callback_data=f"rev_star:{apt.id}:{score}")
+                        for score in [5, 4, 3, 2, 1]
+                    ]])
                     try:
                         await bot.send_message(
                             chat_id=apt.client.telegram_id,
                             text=msg,
-                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                [InlineKeyboardButton(text="✍️ Написати відгук", callback_data=f"rev_start:{apt.id}")]
-                            ]),
+                            reply_markup=stars_keyboard,
                             parse_mode="HTML"
                         )
                     except Exception as e:

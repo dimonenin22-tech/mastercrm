@@ -1335,82 +1335,37 @@ async def process_booking_start_callback(callback: CallbackQuery, state: FSMCont
 
 
 # =====================================================================
-# FLOW A: POST-VISIT REVIEW (10 MIN) — TEXT FIRST -> 1..5 STARS
+# FLOW A: POST-VISIT REVIEW (10 MIN) — STARS FIRST -> OPTIONAL TEXT
 # =====================================================================
 @client_router.callback_query(F.data.startswith("rev_start:"))
-async def process_post_review_start(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_post_review_start_legacy(callback: CallbackQuery, state: FSMContext) -> None:
     apt_id = callback.data.split(":")[1]
-    await state.update_data(review_apt_id=apt_id)
+    await state.update_data(review_apt_id=apt_id, review_rating=5)
     await state.set_state(ReviewStates.waiting_for_post_review_text)
 
-    from app.scheduler.tasks import render_bot_template
-    c_name = "Клієнт"
-    s_title = "процедуру"
-    async with AsyncSessionLocal() as db:
-        apt = await db.get(Appointment, apt_id)
-        if apt:
-            if apt.client_id:
-                cl = await db.get(Client, apt.client_id)
-                if cl:
-                    c_name = cl.first_name
-            if apt.service_id:
-                srv = await db.get(Service, apt.service_id)
-                if srv:
-                    s_title = srv.title
-        def_prompt = f"💖 Дякуємо за візит, {c_name}! Як вам результат процедури «{s_title}»? Напишіть, будь ласка, у відповідь кілька слів про ваші враження:"
-        prompt_text = await render_bot_template(db, "REVIEW_10MIN_TEXT_ASK", def_prompt, name=c_name, service=s_title)
-
+    prompt_text = (
+        "✍️ <b>Будемо щиро вдячні за ваші враження!</b>\n\n"
+        "Напишіть, будь ласка, у відповідь кілька слів — що сподобалося найбільше або на що варто звернути увагу 👇"
+    )
     await callback.message.answer(prompt_text, parse_mode="HTML")
     await callback.answer()
 
 
-@client_router.message(ReviewStates.waiting_for_post_review_text, F.text)
-async def process_post_review_text(message: Message, state: FSMContext) -> None:
-    comment = message.text.strip()
-    await state.update_data(review_comment=comment)
-    await state.set_state(ReviewStates.waiting_for_post_review_stars)
-
-    c_name = message.from_user.first_name if message.from_user else "Клієнт"
-    data = await state.get_data()
-    apt_id = data.get("review_apt_id")
-    s_title = "процедуру"
-
-    from app.scheduler.tasks import render_bot_template
-    def_auto_reply = "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️"
-    def_stars = "✨ А тепер оцініть, будь ласка, ваш візит від 1 до 5 зірочок нижче:"
-
-    async with AsyncSessionLocal() as db:
-        if apt_id:
-            apt = await db.get(Appointment, apt_id)
-            if apt:
-                if apt.client_id:
-                    cl = await db.get(Client, apt.client_id)
-                    if cl and cl.first_name:
-                        c_name = cl.first_name
-                if apt.service_id:
-                    srv = await db.get(Service, apt.service_id)
-                    if srv:
-                        s_title = srv.title
-
-        auto_reply_text = await render_bot_template(db, "REVIEW_10MIN_AUTO_REPLY", def_auto_reply, name=c_name, service=s_title)
-        stars_text = await render_bot_template(db, "REVIEW_10MIN_STARS_ASK", def_stars, name=c_name, service=s_title)
-
-    # 1. Тепла авто-відповідь студії на надісланий текст відгуку
-    await message.answer(auto_reply_text, parse_mode="HTML")
-    # 2. Окреме повідомлення із запитом оцінки та кнопками зірочок 1..5
-    await message.answer(
-        stars_text,
-        reply_markup=get_post_review_stars_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 @client_router.callback_query(F.data.startswith("rev_star:"))
 async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) -> None:
-    rating = int(callback.data.split(":")[1])
-    data = await state.get_data()
-    apt_id = data.get("review_apt_id")
-    comment = data.get("review_comment", "")
+    parts = callback.data.split(":")
+    if len(parts) >= 3:
+        apt_id = parts[1]
+        rating = int(parts[2])
+    else:
+        rating = int(parts[1])
+        data = await state.get_data()
+        apt_id = data.get("review_apt_id")
+
+    await state.update_data(review_apt_id=apt_id, review_rating=rating)
+    await state.set_state(ReviewStates.waiting_for_post_review_text)
+
+    from app.scheduler.tasks import render_bot_template
 
     async with AsyncSessionLocal() as db:
         tg_id = callback.from_user.id if callback.from_user else 0
@@ -1425,9 +1380,10 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
         service_title = "Манікюр"
         if apt and apt.service_id:
             srv = await db.get(Service, apt.service_id)
-            if srv:
+            if srv and srv.title:
                 service_title = srv.title
 
+        # 1. Записуємо оцінку одразу в базу (навіть якщо клієнт не напише текст)
         rev_stmt = select(Review).where(
             Review.appointment_id == apt_id,
             Review.review_type == "POST_VISIT",
@@ -1437,7 +1393,6 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
 
         if existing_rev:
             existing_rev.rating = rating
-            existing_rev.comment = comment
             existing_rev.client_name = client_name
             existing_rev.service_title = service_title
             existing_rev.moderation_status = "APPROVED"
@@ -1450,7 +1405,7 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
                 client_name=client_name,
                 service_title=service_title,
                 rating=rating,
-                comment=comment,
+                comment="",
                 photo_url="",
                 tg_file_id="",
                 review_type="POST_VISIT",
@@ -1458,10 +1413,77 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
                 is_published=True
             )
             db.add(new_rev)
-
         await db.commit()
 
-        # Notify masters/owners
+        def_stars_prompt = (
+            f"❤️ <b>Дякуємо за вашу оцінку {rating} ⭐!</b>\n\n"
+            "Напишіть, будь ласка, у відповідь кілька слів про ваші враження — "
+            "що сподобалося найбільше або на що варто звернути увагу 👇"
+        )
+        prompt_text = await render_bot_template(
+            db, "REVIEW_10MIN_STARS_ASK", def_stars_prompt,
+            name=client_name, service=service_title, rating=rating
+        )
+
+    # Прибираємо кнопки зірочок, щоб уникнути повторних натискань
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    # Надсилаємо запит тексту прямо в чат (без кнопок)
+    await callback.message.answer(prompt_text, parse_mode="HTML")
+    await callback.answer()
+
+
+@client_router.message(ReviewStates.waiting_for_post_review_text, F.text)
+async def process_post_review_text(message: Message, state: FSMContext) -> None:
+    comment = message.text.strip()
+    data = await state.get_data()
+    apt_id = data.get("review_apt_id")
+    rating = data.get("review_rating", 5)
+
+    c_name = message.from_user.first_name if message.from_user else "Клієнт"
+    service_title = "Манікюр"
+
+    from app.scheduler.tasks import render_bot_template
+    def_auto_reply = "Дякуємо за довіру! Чекаємо на наступну корекцію ❤️"
+
+    async with AsyncSessionLocal() as db:
+        if apt_id:
+            apt = await db.get(Appointment, apt_id)
+            if apt and apt.service_id:
+                srv = await db.get(Service, apt.service_id)
+                if srv and srv.title:
+                    service_title = srv.title
+
+            rev_stmt = select(Review).where(
+                Review.appointment_id == apt_id,
+                Review.review_type == "POST_VISIT",
+                Review.deleted.is_(False)
+            )
+            rev = (await db.execute(rev_stmt)).scalar_one_or_none()
+            if rev:
+                rev.comment = comment
+                rev.mark_updated()
+            else:
+                rev = Review(
+                    appointment_id=apt_id,
+                    client_id=apt.client_id if apt else None,
+                    client_name=c_name,
+                    service_title=service_title,
+                    rating=rating,
+                    comment=comment,
+                    photo_url="",
+                    tg_file_id="",
+                    review_type="POST_VISIT",
+                    moderation_status="APPROVED",
+                    is_published=True
+                )
+                db.add(rev)
+            await db.commit()
+
+        # Сповіщаємо майстрів / власника про повний відгук із коментарем
         from app.bot.bot_instance import bot
         if bot:
             owner_stmt = select(Master).where(
@@ -1472,10 +1494,10 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
             masters = (await db.execute(owner_stmt)).scalars().all()
             alert_msg = (
                 f"⭐ <b>Новий відгук від клієнта!</b>\n\n"
-                f"👤 Клієнт: <b>{html.escape(client_name)}</b>\n"
+                f"👤 Клієнт: <b>{html.escape(c_name)}</b>\n"
                 f"💅 Послуга: <b>{html.escape(service_title)}</b>\n"
                 f"⭐ Оцінка: <b>{rating}/5</b> {'⭐' * rating}\n"
-                f"💬 Відгук: «{html.escape(comment or 'Без коментаря')}»"
+                f"💬 Відгук: «{html.escape(comment)}»"
             )
             for m in masters:
                 if m.telegram_chat_id:
@@ -1484,16 +1506,12 @@ async def process_post_review_stars(callback: CallbackQuery, state: FSMContext) 
                     except Exception as e:
                         logger.warning("Failed to notify master of review: %s", e)
 
+        auto_reply_text = await render_bot_template(db, "REVIEW_10MIN_AUTO_REPLY", def_auto_reply, name=c_name, service=service_title)
+
     await state.clear()
-    await callback.message.edit_text(
-        f"❤️ <b>Дякуємо за ваш відгук та високу оцінку {rating} ⭐!</b>\n"
-        f"Ми безмежно раді робити ваші нігтики бездоганними! До нових зустрічей у JuNails!",
-        parse_mode="HTML"
-    )
-    await callback.answer()
+    await message.answer(auto_reply_text, parse_mode="HTML")
 
 
-# =====================================================================
 # FLOW B: 2-WEEK WEAR REMINDER — TEXT -> NAIL PHOTO -> CONDITIONAL BOOKING
 # =====================================================================
 @client_router.callback_query(F.data.startswith("wear_start:") | F.data.startswith("wear_fb:"))
