@@ -206,6 +206,7 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏺 Посилання на Monobank банку", callback_data="adm:set_jar")],
             [InlineKeyboardButton(text="📍 Адреса студії", callback_data="adm:set_address")],
             [InlineKeyboardButton(text="📸 Instagram", callback_data="adm:set_insta")],
+            [InlineKeyboardButton(text="📱 Завантажити застосунок (APK)", callback_data="adm:get_app")],
         ]
     )
 

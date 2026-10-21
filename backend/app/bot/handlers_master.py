@@ -8,7 +8,7 @@ import pytz
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton, URLInputFile
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -564,3 +564,74 @@ async def process_master_review_mod(callback: CallbackQuery) -> None:
             await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[row]), parse_mode="HTML")
         except Exception:
             pass
+
+
+APK_DOWNLOAD_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/download/v2.4.2/JuNailCRM.apk"
+APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/tag/v2.4.2"
+
+
+async def send_app_apk(bot, chat_id: int) -> None:
+    await bot.send_chat_action(chat_id=chat_id, action="upload_document")
+    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.2.apk")
+    caption = (
+        "📱 <b>JuNailCRM v2.4.2 — Мобільний застосунок майстра</b>\n\n"
+        "▫️ <b>Версія:</b> 2.4.2 (Збірка 242)\n"
+        "▫️ <b>Оновлено:</b> 21 жовтня 2026\n"
+        "▫️ <b>Особливості версії:</b>\n"
+        "   • 🕒 Повне приховання минулих слотів на сьогодні\n"
+        "   • 🔋 Незнищенний 24/7 фоновий сервіс синхронізації (Foreground Service)\n"
+        "   • ⚡️ 1-клік дозвіл роботи без обмежень батареї Android\n"
+        "   • 📸 Фотофіксація чеків та робіт до/після\n\n"
+        "👇 <i>Натисніть на файл нижче для миттєвого завантаження та встановлення:</i>"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🌐 Реліз на GitHub",
+                    url=APK_GITHUB_RELEASE_URL,
+                )
+            ]
+        ]
+    )
+    await bot.send_document(chat_id=chat_id, document=doc, caption=caption, reply_markup=kb, parse_mode="HTML")
+
+
+@master_router.message(Command("app"))
+@master_router.message(Command("apk"))
+@master_router.message(Command("download"))
+async def cmd_download_app(message: Message) -> None:
+    chat_id = message.from_user.id if message.from_user else 0
+
+    async with AsyncSessionLocal() as db:
+        m_stmt = select(Master).where(Master.telegram_chat_id == chat_id, Master.deleted.is_(False))
+        master = (await db.execute(m_stmt)).scalar_one_or_none()
+        is_owner_id = bool(settings.MASTER_CHAT_ID and str(chat_id) == str(settings.MASTER_CHAT_ID))
+
+        if not master and not is_owner_id:
+            await message.answer(
+                "🔒 Ця команда доступна лише майстрам студії.\n"
+                "Якщо ви майстер, виконайте спочатку <code>/login</code> для авторизації.",
+                parse_mode="HTML"
+            )
+            return
+
+    await send_app_apk(message.bot, chat_id)
+
+
+@master_router.callback_query(F.data == "adm:get_app")
+async def process_admin_get_app(callback: CallbackQuery) -> None:
+    chat_id = callback.from_user.id if callback.from_user else 0
+
+    async with AsyncSessionLocal() as db:
+        m_stmt = select(Master).where(Master.telegram_chat_id == chat_id, Master.deleted.is_(False))
+        master = (await db.execute(m_stmt)).scalar_one_or_none()
+        is_owner_id = bool(settings.MASTER_CHAT_ID and str(chat_id) == str(settings.MASTER_CHAT_ID))
+
+        if not master and not is_owner_id:
+            await callback.answer("🔒 Доступно лише майстрам та власниці студії.", show_alert=True)
+            return
+
+    await callback.answer("⏳ Відправляємо файл застосунку...")
+    await send_app_apk(callback.bot, chat_id)
+
