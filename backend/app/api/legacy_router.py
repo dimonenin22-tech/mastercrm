@@ -942,8 +942,13 @@ async def unified_exec(
 
         # COMPLETED logic
         if new_status == "COMPLETED" and old_status != "COMPLETED":
-            # 1. Deduct consumables
-            if apt.service_id:
+            # 1. Deduct consumables (only if not already custom deducted by VISIT_BRIEF)
+            has_brief_mov_stmt = select(StockMovement).where(
+                StockMovement.appointment_id == apt.id,
+                StockMovement.type == "VISIT_BRIEF"
+            )
+            has_brief_mov = (await db.execute(has_brief_mov_stmt)).scalars().first()
+            if not has_brief_mov and apt.service_id:
                 c_stmt = (
                     select(ServiceConsumable)
                     .options(selectinload(ServiceConsumable.product))
@@ -1060,6 +1065,19 @@ async def unified_exec(
         if not client_id:
             client_id = "unknown"
 
+        # Handle consumed materials JSON string or list
+        consumed_materials = body.get("consumed_materials")
+        consumed_materials_json = body.get("consumed_materials_json")
+        if consumed_materials is not None and not consumed_materials_json:
+            import json
+            consumed_materials_json = json.dumps(consumed_materials, ensure_ascii=False)
+        elif consumed_materials_json and consumed_materials is None:
+            import json
+            try:
+                consumed_materials = json.loads(consumed_materials_json)
+            except Exception:
+                consumed_materials = []
+
         if not vb:
             custom_vb_id = body.get("id")
             vb = VisitBrief(
@@ -1079,6 +1097,7 @@ async def unified_exec(
                 health_notes=body.get("health_notes", ""),
                 photo_before_url=body.get("photo_before_url", ""),
                 photo_after_url=body.get("photo_after_url", ""),
+                consumed_materials_json=consumed_materials_json or "[]",
             )
             db.add(vb)
         else:
@@ -1096,7 +1115,64 @@ async def unified_exec(
             if "health_notes" in body: vb.health_notes = body["health_notes"]
             if "photo_before_url" in body: vb.photo_before_url = body["photo_before_url"]
             if "photo_after_url" in body: vb.photo_after_url = body["photo_after_url"]
+            if consumed_materials_json is not None:
+                vb.consumed_materials_json = consumed_materials_json
             vb.mark_updated()
+
+        # Idempotent stock reconciliation for this appointment
+        if consumed_materials is not None:
+            old_mov_stmt = select(StockMovement).where(
+                StockMovement.appointment_id == apt_id,
+                StockMovement.type.in_(["DEDUCTION", "VISIT_BRIEF"])
+            )
+            old_movements = (await db.execute(old_mov_stmt)).scalars().all()
+            for old_mov in old_movements:
+                prod = await db.get(Product, old_mov.product_id)
+                if prod:
+                    prod.current_stock += abs(old_mov.quantity)
+                    prod.mark_updated()
+                await db.delete(old_mov)
+            await db.flush()
+
+            for item in consumed_materials:
+                p_id = item.get("product_id")
+                qty = Decimal(str(item.get("quantity", "0")).replace(",", "."))
+                if p_id and qty > Decimal("0.00"):
+                    prod = await db.get(Product, p_id)
+                    if prod and not prod.deleted:
+                        prod.current_stock -= qty
+                        prod.mark_updated()
+                        movement = StockMovement(
+                            product_id=prod.id,
+                            type="VISIT_BRIEF",
+                            quantity=qty,
+                            appointment_id=apt_id,
+                            comment=f"Списання по брифу візиту {apt_id}"
+                        )
+                        db.add(movement)
+
+                        # Low stock alert check
+                        if prod.current_stock <= prod.min_stock_alert:
+                            try:
+                                from app.bot.bot_instance import bot
+                                if bot:
+                                    owner_stmt = select(Master).where(
+                                        Master.role == "owner",
+                                        Master.deleted.is_(False),
+                                        Master.telegram_chat_id.isnot(None)
+                                    )
+                                    owners = (await db.execute(owner_stmt)).scalars().all()
+                                    alert_msg = (
+                                        f"⚠️ <b>Закінчується матеріал на складі:</b> {prod.name} "
+                                        f"(Залишок: {prod.current_stock} {prod.unit})!"
+                                    )
+                                    for owner in owners:
+                                        try:
+                                            await bot.send_message(chat_id=int(owner.telegram_chat_id), text=alert_msg, parse_mode="HTML")
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                pass
 
         # Update client's notes if new diagnostic notes were provided
         if client_id:

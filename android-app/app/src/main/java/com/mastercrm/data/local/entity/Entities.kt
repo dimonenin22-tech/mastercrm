@@ -159,6 +159,7 @@ data class VisitBriefEntity(
     val healthNotes: String?,
     val photoBeforeUrl: String?,
     val photoAfterUrl: String?,
+    val consumedMaterialsJson: String? = "[]",
     val deleted: Boolean = false,
     val version: Int = 1,
     val updatedAt: String = ""

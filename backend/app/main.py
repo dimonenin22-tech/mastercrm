@@ -68,6 +68,8 @@ async def init_and_seed_db() -> None:
             "ALTER TABLE visit_briefs DROP CONSTRAINT IF EXISTS visit_briefs_client_id_fkey",
             "ALTER TABLE photos DROP CONSTRAINT IF EXISTS photos_appointment_id_fkey",
             "ALTER TABLE photos DROP CONSTRAINT IF EXISTS photos_client_id_fkey",
+            "ALTER TABLE visit_briefs ADD COLUMN consumed_materials_json TEXT DEFAULT '[]'",
+            "ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_appointment_id_fkey",
         ]:
             try:
                 await conn.execute(text(col_sql))

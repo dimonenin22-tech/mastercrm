@@ -246,6 +246,7 @@ class VisitBriefDto(BaseModel):
     health_notes: Optional[str] = ""
     photo_before_url: Optional[str] = ""
     photo_after_url: Optional[str] = ""
+    consumed_materials_json: Optional[str] = "[]"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     deleted: bool

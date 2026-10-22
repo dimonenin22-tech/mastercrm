@@ -365,6 +365,7 @@ class SyncRepository(
                             healthNotes = dto.healthNotes,
                             photoBeforeUrl = dto.photoBeforeUrl,
                             photoAfterUrl = dto.photoAfterUrl,
+                            consumedMaterialsJson = dto.consumedMaterialsJson ?: "[]",
                             deleted = dto.deleted,
                             version = dto.version,
                             updatedAt = dto.updatedAt

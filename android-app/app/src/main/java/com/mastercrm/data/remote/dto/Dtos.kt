@@ -185,6 +185,7 @@ data class VisitBriefDto(
     @SerializedName("health_notes") val healthNotes: String?,
     @SerializedName("photo_before_url") val photoBeforeUrl: String?,
     @SerializedName("photo_after_url") val photoAfterUrl: String?,
+    @SerializedName("consumed_materials_json") val consumedMaterialsJson: String? = "[]",
     @SerializedName("deleted") val deleted: Boolean = false,
     @SerializedName("version") val version: Int = 1,
     @SerializedName("updated_at") val updatedAt: String = ""

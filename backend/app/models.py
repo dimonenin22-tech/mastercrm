@@ -183,6 +183,7 @@ class VisitBrief(Base, BaseMixin):
     health_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     photo_before_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     photo_after_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
+    consumed_materials_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="[]")
 
     appointment: Mapped["Appointment"] = relationship("Appointment", back_populates="visit_brief", primaryjoin="Appointment.id==VisitBrief.appointment_id", foreign_keys=[appointment_id])
 
@@ -202,7 +203,7 @@ class WaitingList(Base, BaseMixin):
 class Income(Base, BaseMixin):
     __tablename__ = "incomes"
 
-    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True)
+    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     master_id: Mapped[str] = mapped_column(String(64), ForeignKey("masters.id"), nullable=False)
     client_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("clients.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)

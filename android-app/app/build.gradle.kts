@@ -12,8 +12,8 @@ android {
         applicationId = "com.mastercrm"
         minSdk = 26
         targetSdk = 34
-        versionCode = 246
-        versionName = "2.4.6"
+        versionCode = 247
+        versionName = "2.4.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
