@@ -203,7 +203,7 @@ class WaitingList(Base, BaseMixin):
 class Income(Base, BaseMixin):
     __tablename__ = "incomes"
 
-    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True)
     master_id: Mapped[str] = mapped_column(String(64), ForeignKey("masters.id"), nullable=False)
     client_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("clients.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
@@ -258,7 +258,7 @@ class StockMovement(Base, BaseMixin):
     product_id: Mapped[str] = mapped_column(String(64), ForeignKey("products.id"), nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False)  # RESTOCK, DEDUCTION, AUDIT
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("appointments.id"), nullable=True)
+    appointment_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     comment: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
 
     product: Mapped["Product"] = relationship("Product", back_populates="movements")
