@@ -566,19 +566,21 @@ async def process_master_review_mod(callback: CallbackQuery) -> None:
             pass
 
 
-APK_DOWNLOAD_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/download/v2.4.5/JuNailCRM.apk"
-APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/tag/v2.4.5"
+APK_DOWNLOAD_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/download/v2.4.6/JuNailCRM.apk"
+APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases/tag/v2.4.6"
 
 
 async def send_app_apk(bot, chat_id: int) -> None:
     await bot.send_chat_action(chat_id=chat_id, action="upload_document")
-    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.5.apk")
+    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.6.apk")
     caption = (
-        "📱 <b>JuNailCRM v2.4.5 — Мобільний застосунок майстра</b>\n\n"
-        "▫️ <b>Версія:</b> 2.4.5 (Збірка 245)\n"
-        "▫️ <b>Оновлено:</b> 21 жовтня 2026\n"
+        "📱 <b>JuNailCRM v2.4.6 — Мобільний застосунок майстра</b>\n\n"
+        "▫️ <b>Версія:</b> 2.4.6 (Збірка 246)\n"
+        "▫️ <b>Оновлено:</b> 22 жовтня 2026\n"
         "▫️ <b>Особливості версії:</b>\n"
-        "   • ⚡️ Миттєва синхронізація ручних записів та надійне блокування слотів у боті\n"
+        "   • 📦 Миттєве додавання матеріалів на Склад (оптимістичний UI + підтримка ком)\n"
+        "   • 💅 Надійна прив'язка норм витрат матеріалів (BOM) до послуг без збоїв Retrofit\n"
+        "   • ⚡️ Миттєва синхронізація ручних записів та блокування слотів у боті\n"
         "   • ⭐ Двоетапний збір відгуків: спершу 1-5 зірочок, потім відгук текстом\n"
         "   • 📜 Вільне прокручування розкладу під кнопку «+» (без перекриття карток)\n"
         "   • 🔔 Надійні push-сповіщення зі звуком і вібрацією у фоні (WakeLock)\n"

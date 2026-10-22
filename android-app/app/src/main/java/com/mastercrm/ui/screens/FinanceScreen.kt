@@ -50,6 +50,7 @@ fun FinanceScreen() {
     val expenses by app.database.expenseDao().getAllExpensesFlow().collectAsState(initial = emptyList())
     val products by app.database.productDao().getAllProductsFlow().collectAsState(initial = emptyList())
     val services by app.database.serviceDao().getActiveServicesFlow().collectAsState(initial = emptyList())
+    val allServices by app.database.serviceDao().getAllServicesFlow().collectAsState(initial = emptyList())
 
     var dateFilterMode by remember { mutableStateOf(DateFilterMode.THIS_MONTH) }
     var financeReport by remember { mutableStateOf<FinanceReportDto?>(null) }
@@ -230,20 +231,37 @@ fun FinanceScreen() {
             onDismiss = { showAddProductDialog = false },
             onConfirm = { name, unit, initialStock, minAlert, price ->
                 scope.launch {
+                    val id = "prod-${UUID.randomUUID().toString().take(8)}"
+                    val entity = ProductEntity(
+                        id = id,
+                        name = name,
+                        unit = unit,
+                        currentStock = initialStock,
+                        minStockAlert = minAlert,
+                        purchasePrice = price,
+                        deleted = false,
+                        version = 1,
+                        updatedAt = ""
+                    )
+                    // Optimistic update to Room FIRST
+                    app.database.productDao().insertOrUpdate(entity)
+                    Toast.makeText(context, "Матеріал додано на склад!", Toast.LENGTH_SHORT).show()
+
+                    val payload = mapOf(
+                        "id" to id,
+                        "name" to name,
+                        "unit" to unit,
+                        "current_stock" to initialStock,
+                        "min_stock_alert" to minAlert,
+                        "purchase_price" to price
+                    )
+
                     try {
                         val api = app.apiClient.getApiService()
-                        val resp = api.createProduct(
-                            mapOf(
-                                "name" to name,
-                                "unit" to unit,
-                                "current_stock" to initialStock,
-                                "min_stock_alert" to minAlert,
-                                "purchase_price" to price
-                            )
-                        )
+                        val resp = api.createProduct(payload)
                         if (resp.success && resp.data != null) {
                             val p = resp.data
-                            val entity = ProductEntity(
+                            val updatedEntity = ProductEntity(
                                 id = p.id,
                                 name = p.name,
                                 unit = p.unit,
@@ -254,36 +272,18 @@ fun FinanceScreen() {
                                 version = 1,
                                 updatedAt = ""
                             )
-                            app.database.productDao().insertOrUpdate(entity)
-                            Toast.makeText(context, "Матеріал додано на склад!", Toast.LENGTH_SHORT).show()
+                            app.database.productDao().insertOrUpdate(updatedEntity)
                         } else {
-                            // Offline fallback
-                            val id = "prod-${UUID.randomUUID().toString().take(8)}"
-                            val entity = ProductEntity(
-                                id = id,
-                                name = name,
-                                unit = unit,
-                                currentStock = initialStock,
-                                minStockAlert = minAlert,
-                                purchasePrice = price,
-                                deleted = false,
-                                version = 1,
-                                updatedAt = ""
-                            )
-                            app.database.productDao().insertOrUpdate(entity)
                             app.syncRepository.queueMutation(
                                 action = "product_create",
-                                payload = mapOf(
-                                    "name" to name,
-                                    "unit" to unit,
-                                    "current_stock" to initialStock,
-                                    "min_stock_alert" to minAlert,
-                                    "purchase_price" to price
-                                )
+                                payload = payload
                             )
                         }
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Збережено локально", Toast.LENGTH_SHORT).show()
+                        app.syncRepository.queueMutation(
+                            action = "product_create",
+                            payload = payload
+                        )
                     } finally {
                         showAddProductDialog = false
                     }
@@ -382,7 +382,7 @@ fun FinanceScreen() {
 
     if (showConsumablesDialog) {
         ServiceConsumablesBOMDialog(
-            services = services,
+            services = allServices.ifEmpty { services },
             products = products,
             onDismiss = { showConsumablesDialog = false }
         )
@@ -860,6 +860,7 @@ fun InventoryTab(
                                     onClick = {
                                         val newUnit = if (prod.unit == "мл") "шт" else "мл"
                                         scope.launch {
+                                            app.database.productDao().insertOrUpdate(prod.copy(unit = newUnit))
                                             app.syncRepository.queueMutation(
                                                 action = "product_create",
                                                 payload = mapOf(
@@ -1011,9 +1012,9 @@ fun AddProductDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val s = stockText.toDoubleOrNull() ?: 0.0
-                    val ma = minAlertText.toDoubleOrNull() ?: 2.0
-                    val p = priceText.toDoubleOrNull() ?: 0.0
+                    val s = stockText.replace(",", ".").trim().toDoubleOrNull() ?: 0.0
+                    val ma = minAlertText.replace(",", ".").trim().toDoubleOrNull() ?: 2.0
+                    val p = priceText.replace(",", ".").trim().toDoubleOrNull() ?: 0.0
                     if (name.isNotBlank()) onConfirm(name.trim(), unit.trim(), s, ma, p)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
@@ -1048,7 +1049,7 @@ fun RestockDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val q = qtyText.toDoubleOrNull() ?: 0.0
+                    val q = qtyText.replace(",", ".").trim().toDoubleOrNull() ?: 0.0
                     if (q > 0) onConfirm(q)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
@@ -1095,7 +1096,7 @@ fun WriteoffDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val q = qtyText.toDoubleOrNull() ?: 0.0
+                    val q = qtyText.replace(",", ".").trim().toDoubleOrNull() ?: 0.0
                     if (q > 0) onConfirm(q, reason)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled)
@@ -1130,7 +1131,7 @@ fun InventoryAuditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val q = realQtyText.toDoubleOrNull() ?: product.currentStock
+                    val q = realQtyText.replace(",", ".").trim().toDoubleOrNull() ?: product.currentStock
                     onConfirm(q)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
@@ -1156,6 +1157,12 @@ fun ServiceConsumablesBOMDialog(
     var selectedService by remember { mutableStateOf(services.firstOrNull()) }
     var consumables by remember { mutableStateOf<List<ServiceConsumableItemDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(services) {
+        if (selectedService == null && services.isNotEmpty()) {
+            selectedService = services.first()
+        }
+    }
 
     // Load consumables when selected service changes
     LaunchedEffect(selectedService?.id) {
@@ -1272,19 +1279,19 @@ fun ServiceConsumablesBOMDialog(
                                             consumables = updatedList
                                             scope.launch {
                                                 val srvId = selectedService?.id ?: return@launch
+                                                val payload = mapOf(
+                                                    "service_id" to srvId,
+                                                    "consumables" to updatedList.map {
+                                                        mapOf("product_id" to it.productId, "quantity_per_service" to it.quantityPerService)
+                                                    }
+                                                )
                                                 try {
                                                     val api = app.apiClient.getApiService()
-                                                    api.setServiceConsumables(
-                                                        mapOf(
-                                                            "service_id" to srvId,
-                                                            "consumables" to updatedList.map {
-                                                                mapOf("product_id" to it.productId, "quantity_per_service" to it.quantityPerService)
-                                                            }
-                                                        )
-                                                    )
+                                                    api.setServiceConsumables(payload)
                                                     Toast.makeText(context, "Видалено з норм послуги", Toast.LENGTH_SHORT).show()
                                                 } catch (e: Exception) {
-                                                    // error
+                                                    app.syncRepository.queueMutation("service_consumables_set", payload)
+                                                    Toast.makeText(context, "Збережено в чергу офлайн", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         },
@@ -1315,23 +1322,38 @@ fun ServiceConsumablesBOMDialog(
         var selectedProduct by remember { mutableStateOf(products.firstOrNull()) }
         var qtyText by remember { mutableStateOf("1.0") }
 
+        LaunchedEffect(products) {
+            if (selectedProduct == null || !products.any { it.id == selectedProduct?.id }) {
+                selectedProduct = products.firstOrNull()
+            }
+        }
+
         AlertDialog(
             onDismissRequest = { showAddConsumableSheet = false },
             title = { Text("Прив'язати матеріал", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Матеріал зі складу:", fontSize = 13.sp)
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        products.forEach { prod ->
-                            FilterChip(
-                                selected = selectedProduct?.id == prod.id,
-                                onClick = { selectedProduct = prod },
-                                label = { Text(prod.name, fontSize = 11.sp) }
-                            )
+                    if (products.isEmpty()) {
+                        Text(
+                            "Спочатку додайте матеріали на вкладці Склад",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    } else {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            products.forEach { prod ->
+                                FilterChip(
+                                    selected = selectedProduct?.id == prod.id,
+                                    onClick = { selectedProduct = prod },
+                                    label = { Text(prod.name, fontSize = 11.sp) }
+                                )
+                            }
                         }
                     }
                     OutlinedTextField(
@@ -1348,8 +1370,8 @@ fun ServiceConsumablesBOMDialog(
                     onClick = {
                         val prod = selectedProduct ?: return@Button
                         val srvId = selectedService?.id ?: return@Button
-                        val q = qtyText.toDoubleOrNull() ?: 1.0
-                        val updatedList = consumables + ServiceConsumableItemDto(
+                        val q = qtyText.replace(",", ".").trim().toDoubleOrNull() ?: 1.0
+                        val updatedList = consumables.filter { it.productId != prod.id } + ServiceConsumableItemDto(
                             productId = prod.id,
                             productName = prod.name,
                             quantityPerService = q,
@@ -1358,19 +1380,24 @@ fun ServiceConsumablesBOMDialog(
                         consumables = updatedList
 
                         scope.launch {
+                            val payload = mapOf(
+                                "service_id" to srvId,
+                                "consumables" to updatedList.map {
+                                    mapOf("product_id" to it.productId, "quantity_per_service" to it.quantityPerService)
+                                }
+                            )
                             try {
                                 val api = app.apiClient.getApiService()
-                                api.setServiceConsumables(
-                                    mapOf(
-                                        "service_id" to srvId,
-                                        "consumables" to updatedList.map {
-                                            mapOf("product_id" to it.productId, "quantity_per_service" to it.quantityPerService)
-                                        }
-                                    )
-                                )
-                                Toast.makeText(context, "Матеріал прив'язано до послуги!", Toast.LENGTH_SHORT).show()
+                                val resp = api.setServiceConsumables(payload)
+                                if (resp.success) {
+                                    Toast.makeText(context, "Норму витрат успішно збережено! ✅", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    app.syncRepository.queueMutation("service_consumables_set", payload)
+                                    Toast.makeText(context, "Норму витрат збережено локально! ✅", Toast.LENGTH_SHORT).show()
+                                }
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Помилка збереження", Toast.LENGTH_SHORT).show()
+                                app.syncRepository.queueMutation("service_consumables_set", payload)
+                                Toast.makeText(context, "Норму витрат збережено офлайн! ✅", Toast.LENGTH_SHORT).show()
                             } finally {
                                 showAddConsumableSheet = false
                             }

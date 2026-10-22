@@ -1329,9 +1329,9 @@ async def unified_exec(
             if prod:
                 prod.name = body.get("name", prod.name)
                 prod.unit = body.get("unit", prod.unit)
-                prod.current_stock = Decimal(str(body.get("current_stock", prod.current_stock)))
-                prod.min_stock_alert = Decimal(str(body.get("min_stock_alert", prod.min_stock_alert)))
-                prod.purchase_price = Decimal(str(body.get("purchase_price", prod.purchase_price)))
+                prod.current_stock = Decimal(str(body.get("current_stock", prod.current_stock)).replace(",", "."))
+                prod.min_stock_alert = Decimal(str(body.get("min_stock_alert", prod.min_stock_alert)).replace(",", "."))
+                prod.purchase_price = Decimal(str(body.get("purchase_price", prod.purchase_price)).replace(",", "."))
                 prod.deleted = False
                 prod.updated_at = utc_now()
             else:
@@ -1339,18 +1339,18 @@ async def unified_exec(
                     id=prod_id,
                     name=body.get("name", "Новий товар"),
                     unit=body.get("unit", "шт"),
-                    current_stock=Decimal(str(body.get("current_stock", "0.00"))),
-                    min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00"))),
-                    purchase_price=Decimal(str(body.get("purchase_price", "0.00"))),
+                    current_stock=Decimal(str(body.get("current_stock", "0.00")).replace(",", ".")),
+                    min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00")).replace(",", ".")),
+                    purchase_price=Decimal(str(body.get("purchase_price", "0.00")).replace(",", ".")),
                 )
                 db.add(prod)
         else:
             prod = Product(
                 name=body.get("name", "Новий товар"),
                 unit=body.get("unit", "шт"),
-                current_stock=Decimal(str(body.get("current_stock", "0.00"))),
-                min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00"))),
-                purchase_price=Decimal(str(body.get("purchase_price", "0.00"))),
+                current_stock=Decimal(str(body.get("current_stock", "0.00")).replace(",", ".")),
+                min_stock_alert=Decimal(str(body.get("min_stock_alert", "5.00")).replace(",", ".")),
+                purchase_price=Decimal(str(body.get("purchase_price", "0.00")).replace(",", ".")),
             )
             db.add(prod)
         await db.commit()
@@ -1493,10 +1493,11 @@ async def unified_exec(
         old_items = (await db.execute(old_stmt)).scalars().all()
         for old in old_items:
             await db.delete(old)
+        await db.flush()
 
         for item in items:
             p_id = item.get("product_id")
-            q = Decimal(str(item.get("quantity_per_service", "1.00")))
+            q = Decimal(str(item.get("quantity_per_service", "1.00")).replace(",", "."))
             if p_id and q > Decimal("0.00"):
                 db.add(ServiceConsumable(
                     service_id=s_id,
@@ -1504,7 +1505,29 @@ async def unified_exec(
                     quantity_per_service=q
                 ))
         await db.commit()
-        return ApiResponse.ok({"message": "Норми витрат послуги успішно оновлено", "service_id": s_id})
+
+        sc_stmt = (
+            select(ServiceConsumable)
+            .options(selectinload(ServiceConsumable.product))
+            .where(ServiceConsumable.service_id == s_id, ServiceConsumable.deleted.is_(False))
+        )
+        sc_res = await db.execute(sc_stmt)
+        updated_consumables = sc_res.scalars().all()
+
+        return ApiResponse.ok({
+            "message": "Норми витрат послуги успішно оновлено",
+            "service_id": s_id,
+            "consumables": [
+                {
+                    "id": c.id,
+                    "product_id": c.product_id,
+                    "product_name": c.product.name if c.product else "",
+                    "quantity_per_service": float(c.quantity_per_service),
+                    "unit": c.product.unit if c.product else "шт",
+                }
+                for c in updated_consumables
+            ]
+        })
 
     # 11. Action: services CRUD
     if action == "service_create":

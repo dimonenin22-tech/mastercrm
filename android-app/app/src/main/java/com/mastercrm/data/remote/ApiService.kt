@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Query
 
+@JvmSuppressWildcards
 interface ApiService {
 
     @POST("exec?action=auth_exchange_code")
@@ -30,17 +31,17 @@ interface ApiService {
 
     @POST("exec?action=appointment_update_status")
     suspend fun updateAppointmentStatus(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<AppointmentDto>
 
     @POST("exec?action=appointment_create")
     suspend fun createAppointment(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<AppointmentDto>
 
     @POST("exec?action=visit_brief_save")
     suspend fun saveVisitBrief(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<Map<String, Any>>
 
     @POST("exec?action=client_reset_removal_counter")
@@ -60,22 +61,22 @@ interface ApiService {
 
     @POST("exec?action=schedule_update")
     suspend fun updateSchedule(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<Map<String, Any>>
 
     @POST("exec?action=schedule_exception_add")
     suspend fun addScheduleException(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<ScheduleExceptionDto>
 
     @POST("exec?action=reminder_template_update")
     suspend fun updateReminderTemplate(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<ReminderTemplateDto>
 
     @POST("exec?action=reminder_templates_get")
     suspend fun getReminderTemplates(
-        @Body body: Map<String, Any?> = emptyMap()
+        @Body body: @JvmSuppressWildcards Map<String, Any?> = emptyMap()
     ): ApiResponse<List<ReminderTemplateDto>>
 
     @POST("exec?action=clean_demo_data")
@@ -83,17 +84,17 @@ interface ApiService {
 
     @POST("exec?action=photo_upload")
     suspend fun uploadPhoto(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<PhotoDto>
 
     @POST("exec?action=product_writeoff")
     suspend fun writeoffProduct(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<Map<String, Any>>
 
     @POST("exec?action=product_create")
     suspend fun createProduct(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<ProductDto>
 
     @POST("exec?action=service_consumables_get")
@@ -103,6 +104,6 @@ interface ApiService {
 
     @POST("exec?action=service_consumables_set")
     suspend fun setServiceConsumables(
-        @Body body: Map<String, Any?>
+        @Body body: @JvmSuppressWildcards Map<String, Any?>
     ): ApiResponse<Map<String, Any>>
 }

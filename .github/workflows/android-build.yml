@@ -44,8 +44,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          tag_name: v2.4.5
-          name: JuNailCRM Release v2.4.5
+          tag_name: v2.4.6
+          name: JuNailCRM Release v2.4.6
           files: JuNailCRM.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
