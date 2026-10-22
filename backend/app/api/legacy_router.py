@@ -1,6 +1,9 @@
 import asyncio
+import base64
+import csv
 import hashlib
 import html
+import io
 import json
 import logging
 import secrets
@@ -9,7 +12,6 @@ from decimal import Decimal
 from typing import Any, Optional
 import pytz
 
-import base64
 import os
 import uuid
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
@@ -18,6 +20,7 @@ from sqlalchemy import func, select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db, is_sqlite
 from app.models import (
     Appointment,
@@ -1069,10 +1072,8 @@ async def unified_exec(
         consumed_materials = body.get("consumed_materials")
         consumed_materials_json = body.get("consumed_materials_json")
         if consumed_materials is not None and not consumed_materials_json:
-            import json
             consumed_materials_json = json.dumps(consumed_materials, ensure_ascii=False)
         elif consumed_materials_json and consumed_materials is None:
-            import json
             try:
                 consumed_materials = json.loads(consumed_materials_json)
             except Exception:
@@ -1822,8 +1823,6 @@ async def unified_exec(
             return ApiResponse.fail("FORBIDDEN", "Лише власник має доступ до експорту фінансів")
         from_date = body.get("from_date", "2026-01-01")
         to_date = body.get("to_date", "2026-12-31")
-        import csv
-        import io
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(["Type", "Date", "Category", "Amount", "Payment Method", "Description/Client"])
