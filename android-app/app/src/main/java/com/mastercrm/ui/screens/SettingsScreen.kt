@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,6 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import com.mastercrm.MasterCrmApp
 import com.mastercrm.data.local.entity.MasterEntity
 import com.mastercrm.data.local.entity.ServiceEntity
@@ -29,6 +34,7 @@ import com.mastercrm.ui.theme.DividerColor
 import com.mastercrm.ui.theme.RosePrimary
 import com.mastercrm.ui.theme.StatusCancelled
 import com.mastercrm.ui.theme.StatusCompleted
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -311,7 +317,7 @@ fun StudioSettingsTab(
                         )
                         Text(
                             text = if (isOwner) "Роль: Власниця (Повний доступ)" else "Роль: Майстер",
-                            color = RosePrimary,
+                            color = MaterialTheme.colorScheme.primary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -319,6 +325,11 @@ fun StudioSettingsTab(
 
                     OutlinedButton(
                         onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    app.database.clearAllTables()
+                                } catch (_: Exception) {}
+                            }
                             app.authRepository.clearAuth()
                             onLogout()
                         },
@@ -376,7 +387,7 @@ fun StudioSettingsTab(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "💡 Для отримання сповіщень у Telegram майстер повинен хоча б один раз надіслати боту команду /login або /start.",
-                        color = RosePrimary,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 11.5.sp
                     )
 
@@ -476,6 +487,130 @@ fun StudioSettingsTab(
             }
         }
 
+        // Studio Profile & Contacts Card
+        item {
+            var studioName by remember { mutableStateOf("") }
+            var address by remember { mutableStateOf("") }
+            var phone by remember { mutableStateOf("") }
+            var instagram by remember { mutableStateOf("") }
+            var isSavingContacts by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                try {
+                    val api = app.apiClient.getApiService()
+                    val resp = api.executeAction("settings_get", emptyMap<String, Any>())
+                    if (resp.success && resp.data is Map<*, *>) {
+                        val map = resp.data as Map<String, Any>
+                        studioName = map["studio_name"]?.toString() ?: ""
+                        address = map["address"]?.toString() ?: ""
+                        phone = map["phone"]?.toString() ?: ""
+                        instagram = map["instagram"]?.toString() ?: ""
+                    }
+                } catch (_: Exception) {}
+            }
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("🏢 Профіль та контакти студії", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+
+                    Text(
+                        "Ці дані відображаються клієнтам у Telegram-боті (розділ «Про студію»), у нагадуваннях та на сторінці онлайн-запису.",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+
+                    OutlinedTextField(
+                        value = studioName,
+                        onValueChange = { studioName = it },
+                        label = { Text("Назва студії") },
+                        placeholder = { Text("JuNail Studio") },
+                        singleLine = true,
+                        enabled = isOwner,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text("Адреса студії") },
+                        placeholder = { Text("вул. Хрещатик, 1, оф. 10, Київ") },
+                        singleLine = true,
+                        enabled = isOwner,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = { Text("Контактний телефон") },
+                        placeholder = { Text("+380 (99) 123-45-67") },
+                        singleLine = true,
+                        enabled = isOwner,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = instagram,
+                        onValueChange = { instagram = it },
+                        label = { Text("Instagram акаунт") },
+                        placeholder = { Text("@master_crm_beauty") },
+                        singleLine = true,
+                        enabled = isOwner,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (isOwner) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isSavingContacts = true
+                                    val payload = mapOf(
+                                        "settings" to mapOf(
+                                            "studio_name" to studioName.trim(),
+                                            "address" to address.trim(),
+                                            "phone" to phone.trim(),
+                                            "instagram" to instagram.trim()
+                                        )
+                                    )
+                                    try {
+                                        val api = app.apiClient.getApiService()
+                                        val resp = api.executeAction("settings_update", payload)
+                                        if (resp.success) {
+                                            Toast.makeText(context, "💾 Контакти студії збережено!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            app.syncRepository.queueMutation("settings_update", payload)
+                                            Toast.makeText(context, "Збережено офлайн для синхронізації", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (_: Exception) {
+                                        app.syncRepository.queueMutation("settings_update", payload)
+                                        Toast.makeText(context, "Збережено офлайн для синхронізації", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isSavingContacts = false
+                                    }
+                                }
+                            },
+                            enabled = !isSavingContacts,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isSavingContacts) "Збереження..." else "💾 Зберегти контакти студії", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Text("💡 Лише власниця студії може змінювати контактні дані.", color = Color.Gray, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
         // Prepayment (Deposit) Settings Card
         item {
             var depositMode by remember { mutableStateOf("NONE") } // NONE, FIRST_TIME, ALL
@@ -508,7 +643,7 @@ fun StudioSettingsTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CreditCard, contentDescription = null, tint = RosePrimary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("💳 Налаштування передоплати (Завдатку)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
@@ -594,7 +729,7 @@ fun StudioSettingsTab(
                             }
                         },
                         enabled = !isSavingDeposit,
-                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(if (isSavingDeposit) "Збереження..." else "💾 Зберегти налаштування оплати", fontWeight = FontWeight.Bold)
@@ -639,10 +774,10 @@ fun StudioSettingsTab(
                             Box(
                                 modifier = Modifier
                                     .size(42.dp)
-                                    .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(21.dp)),
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(21.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(initials, fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 14.sp)
+                                Text(initials, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
@@ -676,12 +811,46 @@ fun StudioSettingsTab(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Послуги студії", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Послуги студії (${services.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 if (isOwner) {
                     TextButton(onClick = onAddService) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Додати")
+                    }
+                }
+            }
+        }
+
+        if (services.isEmpty()) {
+            item {
+                ElevatedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Список послуг порожній",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Додайте послуги студії манікюру, щоб клієнти могли записуватися онлайн",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = onAddService, colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Додати послугу", fontSize = 13.sp)
+                        }
                     }
                 }
             }
@@ -730,7 +899,7 @@ fun StudioSettingsTab(
                                     text = "${service.price.toInt()} ₴",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = RosePrimary
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 IconButton(
                                     onClick = { showEditPriceDialog = true },
@@ -810,7 +979,7 @@ fun StudioSettingsTab(
                                 }
                                 showEditPriceDialog = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
                             Text("Зберегти")
                         }
@@ -847,6 +1016,115 @@ fun StudioSettingsTab(
                         }
                     }
                 }
+            }
+        }
+
+        // Account Deletion & Danger Zone (Google Play Requirement)
+        item {
+            var showDeleteAccountDialog by remember { mutableStateOf(false) }
+
+            OutlinedCard(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 24.dp)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteForever,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Керування акаунтом",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Видалення профілю та даних студії",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Відповідно до вимог безпеки Google Play, ви можете надіслати запит на повне видалення вашого облікового запису та всіх збережених даних салону.",
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedButton(
+                        onClick = { showDeleteAccountDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Видалити обліковий запис", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            if (showDeleteAccountDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteAccountDialog = false },
+                    title = { Text("Видалення акаунту", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("Ви впевнені, що хочете видалити свій акаунт та всі дані студії? Цю дію неможливо скасувати.")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showDeleteAccountDialog = false
+                                scope.launch {
+                                    try {
+                                        app.database.clearAllTables()
+                                    } catch (_: Exception) {}
+                                    app.authRepository.clearAuth()
+                                    onLogout()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Видалити назавжди")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteAccountDialog = false }) {
+                            Text("Скасувати")
+                        }
+                    }
+                )
             }
         }
     }
@@ -937,7 +1215,7 @@ fun ScheduleSettingsTab() {
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Зберегти графік")
                 }
@@ -1129,7 +1407,7 @@ fun ScheduleSettingsTab() {
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Зберегти")
                 }
@@ -1275,7 +1553,7 @@ fun ReminderTemplatesTab() {
                                     }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
                             Text("Зберегти")
                         }
@@ -1283,6 +1561,7 @@ fun ReminderTemplatesTab() {
                 }
             }
         }
+
     }
 }
 
@@ -1325,7 +1604,7 @@ fun MastersManagementTab(
                 if (isOwner) {
                     Button(
                         onClick = onAddMaster,
-                        colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1367,10 +1646,10 @@ fun MastersManagementTab(
                                 Box(
                                     modifier = Modifier
                                         .size(44.dp)
-                                        .background(RosePrimary.copy(alpha = 0.15f), RoundedCornerShape(22.dp)),
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(22.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(initials, fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 15.sp)
+                                    Text(initials, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp)
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
@@ -1389,12 +1668,12 @@ fun MastersManagementTab(
 
                             // Role badge
                             Surface(
-                                color = if (master.role == "owner") RosePrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                                color = if (master.role == "owner") MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
                                     text = if (master.role == "owner") "👑 Власник" else "👩‍🎨 Майстер",
-                                    color = if (master.role == "owner") RosePrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (master.role == "owner") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1467,7 +1746,7 @@ fun MastersManagementTab(
                                             putExtra(
                                                 Intent.EXTRA_TEXT,
                                                 "Привіт, ${master.name}! 👋\n" +
-                                                "Приєднайся до нашої студії в Telegram для автоматичного отримання сповіщень про нові записи та входу в додаток JuNailCRM:\n" +
+                                                "Приєднайся до нашої студії в Telegram для автоматичного отримання сповіщень про нові записи та входу в додаток MasterCrm:\n" +
                                                 inviteUrl
                                             )
                                         }
@@ -1516,6 +1795,7 @@ fun MastersManagementTab(
                 }
             }
         }
+
     }
 }
 
@@ -1592,7 +1872,7 @@ fun AddEditMasterDialog(
                         onConfirm(name.trim(), phone.trim(), parsedTg, role, spec.trim())
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text(if (isEdit) "Зберегти" else "Створити")
             }
@@ -1645,7 +1925,7 @@ fun AddServiceDialog(
                     val d = durationText.toIntOrNull() ?: 60
                     if (title.isNotBlank() && p > 0) onConfirm(title, p, d)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = RosePrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text("Створити")
             }

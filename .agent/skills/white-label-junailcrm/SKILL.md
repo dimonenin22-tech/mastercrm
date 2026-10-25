@@ -104,7 +104,9 @@ python scripts/rebrand_and_deploy.py `
    - У вкладці управління командою встановлює `val botUsername = "{{BOT_USERNAME}}"` для формування deep-link посилань майстрам (`https://t.me/$botUsername?start=join_${master.id}`).
 6. **[`strings.xml`](file:///d:/Vibeapp/android-app/app/src/main/res/values/strings.xml)**:
    - Оновлює ім'я застосунку в системі: `<string name="app_name">{{STUDIO_NAME}}</string>`.
-7. **Адаптивні іконки (`{{APP_ICON_PATH}}`)**:
+7. **Редагування контактів студії в додатку ([`SettingsScreen.kt`](file:///d:/Vibeapp/android-app/app/src/main/java/com/mastercrm/ui/screens/SettingsScreen.kt))**:
+   - Власниця студії може в будь-який момент змінити назву, адресу, телефон та Instagram студії у вкладці «Налаштування» ➔ «Студія» в картці «🏢 Профіль та контакти студії». Зміни синхронізуються з Telegram-ботом, публічною сторінкою та нагадуваннями клієнтам без перескладання додатку!
+8. **Адаптивні іконки (`{{APP_ICON_PATH}}`)**:
    - Автоматично масштабує і накладає круглу маску для всіх папок:
      - `mipmap-mdpi/ic_launcher.png` (48x48) та `ic_launcher_round.png`
      - `mipmap-hdpi/ic_launcher.png` (72x72) та `ic_launcher_round.png`
