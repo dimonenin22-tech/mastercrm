@@ -100,11 +100,12 @@ def get_categories_keyboard(categories: list[tuple[str, str, str]]) -> InlineKey
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_services_keyboard(services: list[tuple[str, str, float, int]]) -> InlineKeyboardMarkup:
+def get_services_keyboard(services: list[tuple[str, str, float, int]], currency: str = "$") -> InlineKeyboardMarkup:
     # services: [(id, title, price, duration)]
     buttons = []
     for s_id, title, price, dur in services:
-        label = f"{title} — {int(price)} грн ({dur} хв)"
+        curr_label = f"${int(price)}" if currency == "$" else f"{int(price)} {currency}"
+        label = f"{title} — {curr_label} ({dur} хв)"
         buttons.append([InlineKeyboardButton(text=label, callback_data=f"srv:{s_id}")])
     buttons.append([InlineKeyboardButton(text="◀️ Назад до категорій", callback_data="booking:back_cat")])
     buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="booking:cancel")])

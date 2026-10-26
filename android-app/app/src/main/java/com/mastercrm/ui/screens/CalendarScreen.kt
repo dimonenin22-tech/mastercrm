@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.mastercrm.MasterCrmApp
 import com.mastercrm.data.local.entity.AppointmentEntity
 import com.mastercrm.ui.theme.*
+import com.mastercrm.util.AppLocale
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
@@ -443,10 +444,10 @@ fun AppointmentCard(
     }
 
     val statusLabel = when (appointment.status) {
-        "CONFIRMED" -> "Підтверджено"
-        "COMPLETED" -> "Виконано"
-        "CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER" -> "Скасовано"
-        else -> "Очікує"
+        "CONFIRMED" -> AppLocale.t("Підтверджено", "Confirmed")
+        "COMPLETED" -> AppLocale.t("Виконано", "Completed")
+        "CANCELLED_BY_CLIENT", "CANCELLED_BY_MASTER" -> AppLocale.t("Скасовано", "Cancelled")
+        else -> AppLocale.t("Очікує", "Pending")
     }
 
     Card(
@@ -484,7 +485,7 @@ fun AppointmentCard(
 
             Text(text = serviceTitle, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text(text = "$clientName ($clientPhone)", color = Color.Gray, fontSize = 13.sp)
-            Text(text = "${appointment.totalPrice.toInt()} грн", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 14.sp)
+            Text(text = AppLocale.formatMoney(appointment.totalPrice), fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 14.sp)
 
             if (!appointment.receiptPhotoUrl.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -669,7 +670,7 @@ fun CreateAppointmentDialog(
                     onExpandedChange = { serviceMenuExpanded = !serviceMenuExpanded }
                 ) {
                     OutlinedTextField(
-                        value = currentService?.let { "${it.title} (${it.price.toInt()} грн)" } ?: "Оберіть послугу",
+                        value = currentService?.let { "${it.title} (${AppLocale.formatMoney(it.price)})" } ?: AppLocale.t("Оберіть послугу", "Select Service"),
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Послуга") },
@@ -682,7 +683,7 @@ fun CreateAppointmentDialog(
                     ) {
                         services.forEach { srv ->
                             DropdownMenuItem(
-                                text = { Text("${srv.title} (${srv.price.toInt()} грн, ${srv.durationMinutes} хв)") },
+                                text = { Text("${srv.title} (${AppLocale.formatMoney(srv.price)}, ${srv.durationMinutes} ${AppLocale.t("хв", "min")})") },
                                 onClick = {
                                     selectedServiceId = srv.id
                                     priceText = srv.price.toInt().toString()
@@ -717,7 +718,7 @@ fun CreateAppointmentDialog(
                 OutlinedTextField(
                     value = priceText,
                     onValueChange = { priceText = it },
-                    label = { Text("Вартість (грн)") },
+                    label = { Text(AppLocale.t("Вартість (${AppLocale.currencySymbol})", "Price (${AppLocale.currencySymbol})")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

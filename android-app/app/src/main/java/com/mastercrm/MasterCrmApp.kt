@@ -1,6 +1,7 @@
 package com.mastercrm
 
 import android.app.Application
+import com.mastercrm.util.AppLocale
 import com.mastercrm.data.local.AppDatabase
 import com.mastercrm.data.remote.ApiClient
 import com.mastercrm.data.repository.AuthRepository
@@ -28,6 +29,7 @@ class MasterCrmApp : Application() {
 
         database = AppDatabase.getInstance(this)
         authRepository = AuthRepository(this)
+        AppLocale.init(this)
 
         apiClient = ApiClient(authRepository) {
             _authRevokedEvents.tryEmit(Unit)

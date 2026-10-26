@@ -24,6 +24,7 @@ import com.mastercrm.ui.navigation.Screen
 import com.mastercrm.ui.screens.*
 import com.mastercrm.ui.theme.MasterCRMTheme
 import com.mastercrm.ui.theme.RosePrimary
+import com.mastercrm.util.AppLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -108,11 +109,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val navItems = listOf(
-                    BottomNavItem(Screen.Calendar, Icons.Default.CalendarToday, "Розклад"),
-                    BottomNavItem(Screen.Clients, Icons.Default.People, "Клієнти"),
-                    BottomNavItem(Screen.Finance, Icons.Default.AccountBalanceWallet, "Фінанси"),
-                    BottomNavItem(Screen.Marketing, Icons.Default.AutoAwesome, "Маркетинг"),
-                    BottomNavItem(Screen.Settings, Icons.Default.Settings, "Студія")
+                    BottomNavItem(Screen.Calendar, Icons.Default.CalendarToday, AppLocale.t("Розклад", "Calendar")),
+                    BottomNavItem(Screen.Clients, Icons.Default.People, AppLocale.t("Клієнти", "Clients")),
+                    BottomNavItem(Screen.Finance, Icons.Default.AccountBalanceWallet, AppLocale.t("Фінанси", "Finance")),
+                    BottomNavItem(Screen.Marketing, Icons.Default.AutoAwesome, AppLocale.t("Маркетинг", "Marketing")),
+                    BottomNavItem(Screen.Settings, Icons.Default.Settings, AppLocale.t("Студія", "Settings"))
                 )
 
                 Scaffold(
