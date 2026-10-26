@@ -324,12 +324,22 @@ fun StudioSettingsTab(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(
                                 selected = !AppLocale.isEnglish,
-                                onClick = { AppLocale.setLanguage(context, "uk") },
+                                onClick = {
+                                    AppLocale.setLanguage(context, "uk")
+                                    scope.launch(Dispatchers.IO) {
+                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "language", "value" to "uk"))
+                                    }
+                                },
                                 label = { Text("🇺🇦 Укр") }
                             )
                             FilterChip(
                                 selected = AppLocale.isEnglish,
-                                onClick = { AppLocale.setLanguage(context, "en") },
+                                onClick = {
+                                    AppLocale.setLanguage(context, "en")
+                                    scope.launch(Dispatchers.IO) {
+                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "language", "value" to "en"))
+                                    }
+                                },
                                 label = { Text("🇬🇧 Eng") }
                             )
                         }
@@ -344,17 +354,32 @@ fun StudioSettingsTab(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(
                                 selected = AppLocale.currencySymbol == "$",
-                                onClick = { AppLocale.setCurrency(context, "$") },
+                                onClick = {
+                                    AppLocale.setCurrency(context, "$")
+                                    scope.launch(Dispatchers.IO) {
+                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "$"))
+                                    }
+                                },
                                 label = { Text("$ USD") }
                             )
                             FilterChip(
                                 selected = AppLocale.currencySymbol == "грн",
-                                onClick = { AppLocale.setCurrency(context, "грн") },
+                                onClick = {
+                                    AppLocale.setCurrency(context, "грн")
+                                    scope.launch(Dispatchers.IO) {
+                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "грн"))
+                                    }
+                                },
                                 label = { Text("₴ UAH") }
                             )
                             FilterChip(
                                 selected = AppLocale.currencySymbol == "€",
-                                onClick = { AppLocale.setCurrency(context, "€") },
+                                onClick = {
+                                    AppLocale.setCurrency(context, "€")
+                                    scope.launch(Dispatchers.IO) {
+                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "€"))
+                                    }
+                                },
                                 label = { Text("€ EUR") }
                             )
                         }
