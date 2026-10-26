@@ -571,13 +571,26 @@ APK_GITHUB_RELEASE_URL = "https://github.com/dimonenin22-tech/mastercrm/releases
 
 
 async def send_app_apk(bot, chat_id: int) -> None:
+    from pathlib import Path
+    from aiogram.types import FSInputFile
     await bot.send_chat_action(chat_id=chat_id, action="upload_document")
-    doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.7.apk")
+
+    base_dir = Path(__file__).resolve().parent.parent.parent.parent
+    local_apk = base_dir / "JuNailCRM.apk"
+    if not local_apk.exists():
+        local_apk = base_dir / "android-app" / "app" / "build" / "outputs" / "apk" / "full" / "debug" / "app-full-debug.apk"
+
+    if local_apk.exists():
+        doc = FSInputFile(str(local_apk), filename="JuNailCRM_v2.4.7.apk")
+    else:
+        doc = URLInputFile(APK_DOWNLOAD_URL, filename="JuNailCRM_v2.4.7.apk")
+
     caption = (
         "📱 <b>JuNailCRM v2.4.7 — Мобільний застосунок майстра</b>\n\n"
         "▫️ <b>Версія:</b> 2.4.7 (Збірка 247)\n"
-        "▫️ <b>Оновлено:</b> 22 жовтня 2026\n"
+        "▫️ <b>Оновлено:</b> 26 жовтня 2026\n"
         "▫️ <b>Особливості версії:</b>\n"
+        "   • 🏢 Профіль та контакти студії в Налаштуваннях (Instagram, каса, адреса)\n"
         "   • 📦 Інтерактивне управління матеріалами в бріфі візиту (+ зі складу, [-] / [+])\n"
         "   • 🔄 Безпомилкове ідемпотентне списання зі складу без дублювань\n"
         "   • ⚡️ Миттєва синхронізація ручних записів та блокування слотів у боті\n"
