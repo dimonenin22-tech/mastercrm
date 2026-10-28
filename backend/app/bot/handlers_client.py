@@ -18,7 +18,6 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from app.bot.fsm import BookingStates, ReceiptUploadStates, ReviewStates, WaitingListStates
-from app.bot.localization import t_bot, format_bot_price
 from app.bot.keyboards import (
     create_inline_calendar,
     create_waitlist_calendar,
@@ -57,15 +56,6 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 client_router = Router(name="client_router")
-
-
-async def get_studio_lang_and_currency(db) -> tuple[str, str, str]:
-    res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
-    st_map = {s.key: s.value for s in res.scalars().all()}
-    lang = st_map.get("language", "uk")
-    curr = st_map.get("currency_symbol", "$")
-    studio = st_map.get("studio_name", "JuNail")
-    return lang, curr, studio
 
 
 def get_kyiv_today() -> str:
@@ -173,12 +163,15 @@ async def cmd_start(message: Message, state: FSMContext, command: Optional[Comma
                 )
                 return
 
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
-    first_name = html.escape(message.from_user.first_name if message.from_user else ("Client" if bot_lang == "en" else "Клієнт"))
-    text = t_bot(bot_lang, "welcome", name=first_name, studio=studio)
-    await message.answer(text, reply_markup=get_client_main_keyboard(lang=bot_lang), parse_mode="HTML")
-    await message.answer(t_bot(bot_lang, "menu_quick"), reply_markup=get_client_main_inline_keyboard(lang=bot_lang), parse_mode="HTML")
+    first_name = html.escape(message.from_user.first_name if message.from_user else "Клієнт")
+    text = (
+        f"Привіт, <b>{first_name}</b>! ✨\n\n"
+        f"Раді вітати вас у боті онлайн-запису студії <b>JuNail</b> 💅\n"
+        f"Тут ви можете обрати зручний час для манікюру, переглянути актуальний прайс або перевірити свої записи.\n\n"
+        f"Оберіть потрібну дію в меню нижче 👇"
+    )
+    await message.answer(text, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
+    await message.answer("💅 Швидке меню:", reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
 
 
 @client_router.message(Command("myid", "id"))
@@ -196,14 +189,15 @@ async def cmd_myid(message: Message) -> None:
 async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
-    first_name = html.escape(callback.from_user.first_name if callback.from_user else ("Client" if bot_lang == "en" else "Клієнт"))
-    text = t_bot(bot_lang, "main_menu_title", name=first_name, studio=studio)
+    first_name = html.escape(callback.from_user.first_name if callback.from_user else "Клієнт")
+    text = (
+        f"Головне меню <b>JuNail</b> ✨\n\n"
+        f"Раді вітати, <b>{first_name}</b>! Оберіть потрібний пункт нижче 👇"
+    )
     try:
-        await callback.message.edit_text(text, reply_markup=get_client_main_inline_keyboard(lang=bot_lang), parse_mode="HTML")
+        await callback.message.edit_text(text, reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=get_client_main_inline_keyboard(lang=bot_lang), parse_mode="HTML")
+        await callback.message.answer(text, reply_markup=get_client_main_inline_keyboard(), parse_mode="HTML")
 
 
 @client_router.callback_query(F.data == "m:book")
@@ -215,7 +209,6 @@ async def cb_book(callback: CallbackQuery, state: FSMContext) -> None:
 
 async def _send_price_list(target_message: Message, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         res = await db.execute(
             select(ServiceCategory)
             .options(selectinload(ServiceCategory.services))
@@ -224,27 +217,25 @@ async def _send_price_list(target_message: Message, is_edit: bool = False) -> No
         categories = res.scalars().all()
 
         if not categories:
-            text = t_bot(bot_lang, "price_updating")
+            text = "📋 Прайс-лист наразі оновлюється."
         else:
-            lines = [t_bot(bot_lang, "price_title")]
-            min_u = t_bot(bot_lang, "min_unit")
+            lines = ["📋 <b>Наш прайс-лист:</b>\n"]
             for cat in categories:
                 active_services = [s for s in cat.services if not s.deleted and s.is_active]
                 if active_services:
                     lines.append(f"<b>{html.escape(cat.icon_emoji)} {html.escape(cat.name)}:</b>")
                     for s in active_services:
-                        p_str = format_bot_price(float(s.price), curr)
-                        lines.append(f"  • {html.escape(s.title)} — <b>{p_str}</b> ({s.duration_minutes} {min_u})")
+                        lines.append(f"  • {html.escape(s.title)} — <b>{int(s.price)} ₴</b> ({s.duration_minutes} хв)")
                     lines.append("")
             text = "\n".join(lines).strip()
 
         if is_edit:
             try:
-                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
                 return
             except Exception:
                 pass
-        await target_message.answer(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+        await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
 
 
 @client_router.callback_query(F.data == "m:price")
@@ -254,7 +245,7 @@ async def cb_price(callback: CallbackQuery, state: FSMContext) -> None:
     await _send_price_list(callback.message, is_edit=True)
 
 
-@client_router.message(F.text.in_({"📋 Прайс", "📋 Price List"}))
+@client_router.message(F.text == "📋 Прайс")
 async def show_price_list(message: Message, state: FSMContext) -> None:
     await state.clear()
     await _send_price_list(message, is_edit=False)
@@ -262,7 +253,6 @@ async def show_price_list(message: Message, state: FSMContext) -> None:
 
 async def _send_about_info(target_message: Message, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
         items = {s.key: s.value for s in res.scalars().all()}
 
@@ -270,29 +260,20 @@ async def _send_about_info(target_message: Message, is_edit: bool = False) -> No
         phone = items.get("phone", "+380 (99) 123-45-67")
         insta = items.get("instagram", "@master_crm_beauty")
 
-        if bot_lang == "en":
-            text = (
-                f"🏢 <b>About our studio {html.escape(studio)}:</b>\n\n"
-                f"📍 <b>Address:</b> {html.escape(addr)}\n"
-                f"📞 <b>Phone:</b> {html.escape(phone)}\n"
-                f"📸 <b>Instagram:</b> {html.escape(insta)}\n\n"
-                f"We look forward to welcoming you with cozy care for your nails! 💅☕️"
-            )
-        else:
-            text = (
-                f"👩🎨 <b>Про нашу студію {html.escape(studio)}:</b>\n\n"
-                f"📍 <b>Адреса:</b> {html.escape(addr)}\n"
-                f"📞 <b>Телефон:</b> {html.escape(phone)}\n"
-                f"📸 <b>Instagram:</b> {html.escape(insta)}\n\n"
-                f"Чекаємо на вас затишно та з турботою про ваші нігтики! 💅☕️"
-            )
+        text = (
+            f"👩🎨 <b>Про нашу студію:</b>\n\n"
+            f"📍 <b>Адреса:</b> {html.escape(addr)}\n"
+            f"📞 <b>Телефон:</b> {html.escape(phone)}\n"
+            f"📸 <b>Instagram:</b> {html.escape(insta)}\n\n"
+            f"Чекаємо на вас затишно та з турботою про ваші нігтики! 💅☕️"
+        )
         if is_edit:
             try:
-                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+                await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
                 return
             except Exception:
                 pass
-        await target_message.answer(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+        await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
 
 
 @client_router.callback_query(F.data == "m:about")
@@ -302,7 +283,7 @@ async def cb_about(callback: CallbackQuery, state: FSMContext) -> None:
     await _send_about_info(callback.message, is_edit=True)
 
 
-@client_router.message(F.text.in_({"👩🎨 Про майстра / Адреса", "🏢 Про студію", "🏢 About Studio", "🏢 About Master / Address"}))
+@client_router.message(F.text == "👩🎨 Про майстра / Адреса")
 async def show_about_info(message: Message, state: FSMContext) -> None:
     await state.clear()
     await _send_about_info(message, is_edit=False)
@@ -310,7 +291,6 @@ async def show_about_info(message: Message, state: FSMContext) -> None:
 
 async def _send_client_appointments(target_message: Message, tg_id: int, is_edit: bool = False) -> None:
     async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         c_res = await db.execute(
             select(Client).where(
                 or_(Client.telegram_id == tg_id, Client.telegram_id == int(tg_id)),
@@ -319,14 +299,14 @@ async def _send_client_appointments(target_message: Message, tg_id: int, is_edit
         )
         client = c_res.scalars().first()
         if not client:
-            text = "You don't have any bookings yet. Tap below to book! 💅" if bot_lang == "en" else "У вас ще немає збережених записів. Записатися можна за кнопкою нижче! 💅"
+            text = "У вас ще немає збережених записів. Записатися можна за кнопкою нижче! 💅"
             if is_edit:
                 try:
-                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
                     return
                 except Exception:
                     pass
-            await target_message.answer(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+            await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
             return
 
         today = get_kyiv_today()
@@ -344,54 +324,40 @@ async def _send_client_appointments(target_message: Message, tg_id: int, is_edit
         apts = (await db.execute(stmt)).scalars().all()
 
         if not apts:
-            text = "You have no upcoming bookings. You can book using the button below! 💅" if bot_lang == "en" else "У вас немає активних майбутніх записів. Записатися можна за кнопкою 💅 <b>Записатися онлайн</b>!"
+            text = "У вас немає активних майбутніх записів. Записатися можна за кнопкою 💅 <b>Записатися онлайн</b>!"
             if is_edit:
                 try:
-                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+                    await target_message.edit_text(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
                     return
                 except Exception:
                     pass
-            await target_message.answer(text, reply_markup=get_nav_back_keyboard(lang=bot_lang), parse_mode="HTML")
+            await target_message.answer(text, reply_markup=get_nav_back_keyboard(), parse_mode="HTML")
             return
 
         status_labels = {
-            "PENDING": ("⏳ Awaiting confirmation" if bot_lang == "en" else "⏳ Очікує підтвердження"),
-            "CONFIRMED": ("✅ Confirmed" if bot_lang == "en" else "✅ Підтверджено"),
-            "COMPLETED": ("🎉 Completed" if bot_lang == "en" else "🎉 Завершено"),
+            "PENDING": "⏳ Очікує підтвердження",
+            "CONFIRMED": "✅ Підтверджено",
+            "COMPLETED": "🎉 Завершено",
         }
 
         for a in apts:
-            s_title = a.service.title if a.service else ("Service" if bot_lang == "en" else "Послуга")
-            m_name = a.master.name if a.master else ("Master" if bot_lang == "en" else "Майстер")
+            s_title = a.service.title if a.service else "Послуга"
+            m_name = a.master.name if a.master else "Майстер"
             st_text = status_labels.get(a.status, a.status)
-            p_str = format_bot_price(float(a.total_price), curr)
-            if bot_lang == "en":
-                msg = (
-                    f"📅 <b>Booking for {html.escape(a.date)}</b>\n"
-                    f"⏰ Time: <b>{html.escape(a.start_time)} - {html.escape(a.end_time)}</b>\n"
-                    f"💅 Service: <b>{html.escape(s_title)}</b>\n"
-                    f"👩🎨 Master: <b>{html.escape(m_name)}</b>\n"
-                    f"💰 Price: <b>{p_str}</b>\n"
-                    f"📌 Status: <b>{st_text}</b>"
-                )
-            else:
-                msg = (
-                    f"📅 <b>Запис на {html.escape(a.date)}</b>\n"
-                    f"⏰ Час: <b>{html.escape(a.start_time)} - {html.escape(a.end_time)}</b>\n"
-                    f"💅 Послуга: <b>{html.escape(s_title)}</b>\n"
-                    f"👩🎨 Майстер: <b>{html.escape(m_name)}</b>\n"
-                    f"💰 Вартість: <b>{p_str}</b>\n"
-                    f"📌 Статус: <b>{st_text}</b>"
-                )
-            cancel_btn = "❌ Cancel this booking" if bot_lang == "en" else "❌ Скасувати цей запис"
-            more_btn = "💅 Book Online" if bot_lang == "en" else "💅 Записатися ще"
-            menu_btn = "« Main Menu" if bot_lang == "en" else "« Головне меню"
+            msg = (
+                f"📅 <b>Запис на {html.escape(a.date)}</b>\n"
+                f"⏰ Час: <b>{html.escape(a.start_time)} - {html.escape(a.end_time)}</b>\n"
+                f"💅 Послуга: <b>{html.escape(s_title)}</b>\n"
+                f"👩🎨 Майстер: <b>{html.escape(m_name)}</b>\n"
+                f"💰 Вартість: <b>{int(a.total_price)} ₴</b>\n"
+                f"📌 Статус: <b>{st_text}</b>"
+            )
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text=cancel_btn, callback_data=f"c_can:{a.id}")],
+                    [InlineKeyboardButton(text="❌ Скасувати цей запис", callback_data=f"c_can:{a.id}")],
                     [
-                        InlineKeyboardButton(text=more_btn, callback_data="m:book"),
-                        InlineKeyboardButton(text=menu_btn, callback_data="m:main"),
+                        InlineKeyboardButton(text="💅 Записатися ще", callback_data="m:book"),
+                        InlineKeyboardButton(text="« Головне меню", callback_data="m:main"),
                     ]
                 ]
             )
@@ -405,7 +371,7 @@ async def cb_my_apts(callback: CallbackQuery, state: FSMContext) -> None:
     await _send_client_appointments(callback.message, callback.from_user.id if callback.from_user else 0, is_edit=False)
 
 
-@client_router.message(F.text.in_({"📅 Мої записи", "📅 My Bookings"}))
+@client_router.message(F.text == "📅 Мої записи")
 async def show_client_appointments(message: Message, state: FSMContext) -> None:
     await state.clear()
     await _send_client_appointments(message, message.from_user.id if message.from_user else 0, is_edit=False)
@@ -469,7 +435,7 @@ async def cb_waitlist(callback: CallbackQuery, state: FSMContext) -> None:
     await _send_waitlist_flow(callback.message, callback.from_user.id if callback.from_user else 0, is_edit=True)
 
 
-@client_router.message(F.text.in_({"📝 Лист очікування", "📝 Waiting List"}))
+@client_router.message(F.text == "📝 Лист очікування")
 async def msg_waitlist(message: Message, state: FSMContext) -> None:
     await state.clear()
     await _send_waitlist_flow(message, message.from_user.id if message.from_user else 0, is_edit=False)
@@ -601,40 +567,37 @@ async def cancel_by_client_cb(callback: CallbackQuery) -> None:
 
 
 # 4. Booking Wizard Flow (FSM)
-@client_router.message(F.text.in_({"💅 Записатися онлайн", "💅 Book Online", "💅 Book Appointment"}))
+@client_router.message(F.text == "💅 Записатися онлайн")
 async def start_booking_flow(message: Message, state: FSMContext, is_callback: bool = False) -> None:
     await state.clear()
     async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         res = await db.execute(select(ServiceCategory).where(ServiceCategory.deleted.is_(False), ServiceCategory.is_active.is_(True)))
         cats = res.scalars().all()
         if not cats:
-            msg_no = "Online booking is temporarily unavailable (no active service categories)." if bot_lang == "en" else "Наразі онлайн-запис недоступний (немає активних категорій послуг)."
             if is_callback:
                 try:
-                    await message.edit_text(msg_no, parse_mode="HTML")
+                    await message.edit_text("Наразі онлайн-запис недоступний (немає активних категорій послуг).", parse_mode="HTML")
                     return
                 except Exception:
                     pass
-            await message.answer(msg_no, parse_mode="HTML")
+            await message.answer("Наразі онлайн-запис недоступний (немає активних категорій послуг).", parse_mode="HTML")
             return
 
         data_cats = [(c.id, c.name, c.icon_emoji) for c in cats]
         await state.set_state(BookingStates.waiting_for_category)
-        step_title = t_bot(bot_lang, "step_cat")
         if is_callback:
             try:
                 await message.edit_text(
-                    step_title,
-                    reply_markup=get_categories_keyboard(data_cats, lang=bot_lang),
+                    "💅 <b>Крок 1/5: Оберіть категорію послуг:</b>",
+                    reply_markup=get_categories_keyboard(data_cats),
                     parse_mode="HTML"
                 )
                 return
             except Exception:
                 pass
         await message.answer(
-            step_title,
-            reply_markup=get_categories_keyboard(data_cats, lang=bot_lang),
+            "💅 <b>Крок 1/5: Оберіть категорію послуг:</b>",
+            reply_markup=get_categories_keyboard(data_cats),
             parse_mode="HTML"
         )
 
@@ -651,12 +614,11 @@ async def process_category_selected(callback: CallbackQuery, state: FSMContext) 
             await callback.answer("У цій категорії наразі немає доступних послуг.", show_alert=True)
             return
 
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         data_srv = [(s.id, s.title, float(s.price), s.duration_minutes) for s in services]
         await state.set_state(BookingStates.waiting_for_service)
         await callback.message.edit_text(
-            t_bot(bot_lang, "step_srv"),
-            reply_markup=get_services_keyboard(data_srv, currency=curr, lang=bot_lang),
+            "✨ <b>Крок 2/5: Оберіть бажану процедуру:</b>",
+            reply_markup=get_services_keyboard(data_srv),
             parse_mode="HTML"
         )
     await callback.answer()
@@ -671,25 +633,17 @@ async def back_to_categories(callback: CallbackQuery, state: FSMContext) -> None
 @client_router.callback_query(F.data == "booking:cancel")
 async def cb_booking_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
-    cancel_alert = "Booking cancelled" if bot_lang == "en" else "Запис скасовано"
-    cancel_text = (
-        "❌ <b>Booking cancelled.</b> You can always book again when convenient!"
-        if bot_lang == "en"
-        else "❌ <b>Запис скасовано.</b> Ви завжди можете розпочати заново у зручний час!"
-    )
-    await callback.answer(cancel_alert)
+    await callback.answer("Запис скасовано")
     try:
         await callback.message.edit_text(
-            cancel_text,
-            reply_markup=get_client_main_inline_keyboard(lang=bot_lang),
+            "❌ <b>Запис скасовано.</b> Ви завжди можете розпочати заново у зручний час!",
+            reply_markup=get_client_main_inline_keyboard(),
             parse_mode="HTML"
         )
     except Exception:
         await callback.message.answer(
-            cancel_text,
-            reply_markup=get_client_main_inline_keyboard(lang=bot_lang),
+            "❌ <b>Запис скасовано.</b>",
+            reply_markup=get_client_main_inline_keyboard(),
             parse_mode="HTML"
         )
 
@@ -709,15 +663,13 @@ async def process_service_selected(callback: CallbackQuery, state: FSMContext) -
         else:
             await state.update_data(service_id=srv_id)
 
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
     today_str = get_kyiv_today()
     dt = datetime.strptime(today_str, "%Y-%m-%d")
 
     await state.set_state(BookingStates.waiting_for_date)
     await callback.message.edit_text(
-        t_bot(bot_lang, "step_date"),
-        reply_markup=create_inline_calendar(dt.year, dt.month, today_str, lang=bot_lang),
+        "📅 <b>Крок 3/5: Оберіть бажаний день у календарі:</b>",
+        reply_markup=create_inline_calendar(dt.year, dt.month, today_str),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -728,9 +680,7 @@ async def process_calendar_nav(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
     year, month = int(parts[2]), int(parts[3])
     today_str = get_kyiv_today()
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
-    await callback.message.edit_reply_markup(reply_markup=create_inline_calendar(year, month, today_str, lang=bot_lang))
+    await callback.message.edit_reply_markup(reply_markup=create_inline_calendar(year, month, today_str))
     await callback.answer()
 
 
@@ -845,15 +795,17 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
                     free_slots.append(f"{h:02d}:{m:02d}")
                 cur_min += slot_step
 
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
     await state.set_state(BookingStates.waiting_for_time)
     if free_slots:
-        text = t_bot(bot_lang, "step_time", date=chosen_date)
-        await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard(free_slots, lang=bot_lang), parse_mode="HTML")
+        text = f"⏰ <b>Крок 4/5: Вільні віконця на {chosen_date}:</b>\nОберіть зручний час:"
+        await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard(free_slots), parse_mode="HTML")
     else:
-        text = t_bot(bot_lang, "step_time_full", date=chosen_date)
-        await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard([], lang=bot_lang), parse_mode="HTML")
+        text = (
+            f"😔 На дату <b>{chosen_date}</b> вільних автоматичних віконець немає.\n\n"
+            f"Ви можете стати у <b>Лист очікування</b> (ми напишемо, щойно хтось скасує свій візит) "
+            f"або обрати опцію <b>Обговорити інший час</b>."
+        )
+        await callback.message.edit_text(text, reply_markup=get_time_slots_keyboard([]), parse_mode="HTML")
     await callback.answer()
 
 
@@ -861,12 +813,10 @@ async def process_date_selected(callback: CallbackQuery, state: FSMContext) -> N
 async def back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
     today_str = get_kyiv_today()
     dt = datetime.strptime(today_str, "%Y-%m-%d")
-    async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
     await state.set_state(BookingStates.waiting_for_date)
     await callback.message.edit_text(
-        t_bot(bot_lang, "step_date"),
-        reply_markup=create_inline_calendar(dt.year, dt.month, today_str, lang=bot_lang),
+        "📅 <b>Крок 3/5: Оберіть день у календарі:</b>",
+        reply_markup=create_inline_calendar(dt.year, dt.month, today_str),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -883,7 +833,6 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
     # Check if deposit is required
     deposit_line = ""
     async with AsyncSessionLocal() as db:
-        bot_lang, curr, studio = await get_studio_lang_and_currency(db)
         st_res = await db.execute(select(StudioSetting).where(StudioSetting.deleted.is_(False)))
         st_map = {s.key: s.value for s in st_res.scalars().all()}
         dep_mode = st_map.get("deposit_mode", "NONE")
@@ -904,44 +853,25 @@ async def render_booking_summary(target_message: Message, state: FSMContext, is_
         is_bl = client.is_blacklisted if client else False
         is_req = (dep_mode == "ALL") or (dep_mode == "FIRST_TIME" and visits == 0) or is_bl
         if is_req and dep_val > Decimal("0.00"):
-            dep_str = format_bot_price(float(dep_val), curr)
-            if bot_lang == "en":
-                deposit_line = f"💳 <b>Deposit required to secure slot:</b> {dep_str}\n\n"
-            else:
-                deposit_line = f"💳 <b>До сплати (передоплата для фіксації запису):</b> {dep_str}\n\n"
+            deposit_line = f"💳 <b>До сплати (передоплата для фіксації запису):</b> {int(dep_val)} ₴\n\n"
 
-    p_str = format_bot_price(float(data.get("service_price", 0.0)), curr)
-    if bot_lang == "en":
-        summary_text = (
-            f"📋 <b>Booking Confirmation:</b>\n\n"
-            f"👤 <b>Name:</b> {html.escape(client_name)}\n"
-            f"📱 <b>Phone:</b> {html.escape(client_phone)}\n"
-            f"💅 <b>Service:</b> {html.escape(s_title)}\n"
-            f"📅 <b>Date:</b> {date_str}\n"
-            f"⏰ <b>Time:</b> {start_time}\n"
-            f"💰 <b>Price:</b> {p_str}\n\n"
-            f"{deposit_line}"
-            f"Please verify your details and confirm booking:"
-        )
-    else:
-        summary_text = (
-            f"📋 <b>Підтвердження запису:</b>\n\n"
-            f"👤 <b>Ім'я:</b> {html.escape(client_name)}\n"
-            f"📱 <b>Телефон:</b> {html.escape(client_phone)}\n"
-            f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
-            f"📅 <b>Дата:</b> {date_str}\n"
-            f"⏰ <b>Час:</b> {start_time}\n"
-            f"💰 <b>Вартість:</b> {p_str}\n\n"
-            f"{deposit_line}"
-            f"Будь ласка, перевірте дані та підтвердіть запис:"
-        )
+    summary_text = (
+        f"📋 <b>Підтвердження запису:</b>\n\n"
+        f"👤 <b>Ім'я:</b> {html.escape(client_name)}\n"
+        f"📱 <b>Телефон:</b> {html.escape(client_phone)}\n"
+        f"💅 <b>Послуга:</b> {html.escape(s_title)}\n"
+        f"📅 <b>Дата:</b> {date_str}\n"
+        f"⏰ <b>Час:</b> {start_time}\n\n"
+        f"{deposit_line}"
+        f"Будь ласка, перевірте дані та підтвердіть запис:"
+    )
     if is_callback:
         try:
-            await target_message.edit_text(summary_text, reply_markup=get_booking_summary_keyboard(lang=bot_lang), parse_mode="HTML")
+            await target_message.edit_text(summary_text, reply_markup=get_booking_summary_keyboard(), parse_mode="HTML")
             return
         except Exception:
             pass
-    await target_message.answer(summary_text, reply_markup=get_booking_summary_keyboard(lang=bot_lang), parse_mode="HTML")
+    await target_message.answer(summary_text, reply_markup=get_booking_summary_keyboard(), parse_mode="HTML")
 
 
 @client_router.callback_query(F.data == "time:passed")
@@ -1268,66 +1198,34 @@ async def finalize_booking(callback: CallbackQuery, state: FSMContext) -> None:
 
     await state.clear()
 
-    bot_lang = st_map.get("language", "uk")
-    curr = st_map.get("currency_symbol", "$")
-    studio = st_map.get("studio_name", "JuNail")
-    p_str = format_bot_price(float(srv_price), curr)
+    confirmation_msg = (
+        f"🎉 <b>Ваш запис успішно створено!</b>\n\n"
+        f"📅 Дата: <b>{date_str}</b>\n"
+        f"⏰ Час: <b>{start_time}</b>\n"
+        f"💅 Процедура: <b>{html.escape(srv_title)}</b>\n"
+    )
+    if discount_p > 0:
+        confirmation_msg += f"🎁 <i>Враховано вашу персональну знижку {discount_p}%!</i>\n"
+    if client.is_blacklisted:
+        confirmation_msg += f"⚠️ <i>Для вашого акаунту діє обов'язковий завдаток (No-Show).</i>\n"
+    confirmation_msg += "\n"
 
-    if bot_lang == "en":
-        confirmation_msg = (
-            f"🎉 <b>Your booking has been created!</b>\n\n"
-            f"📅 Date: <b>{date_str}</b>\n"
-            f"⏰ Time: <b>{start_time}</b>\n"
-            f"💅 Service: <b>{html.escape(srv_title)}</b>\n"
-            f"💰 Price: <b>{p_str}</b>\n"
+    if deposit_required and deposit_val > Decimal("0.00"):
+        confirmation_msg += (
+            f"⚠️ <b>Увага: для фіксації запису потрібна передоплата {int(deposit_val)} ₴.</b>\n"
+            f"Будь ласка, здійсніть оплату протягом 60 хвилин:\n"
+            f"💳 <b>Карта:</b> <code>{html.escape(card_details)}</code>\n"
+            f"🏺 <b>Monobank Банка:</b> {html.escape(jar_link)}\n\n"
+            f"📸 <i>Після оплати просто надішліть фото або скріншот чека сюди в чат!</i>"
         )
-        if discount_p > 0:
-            confirmation_msg += f"🎁 <i>Personal {discount_p}% discount applied!</i>\n"
-        if client.is_blacklisted:
-            confirmation_msg += f"⚠️ <i>Mandatory deposit applies to your account (No-Show).</i>\n"
-        confirmation_msg += "\n"
-
-        if deposit_required and deposit_val > Decimal("0.00"):
-            d_str = format_bot_price(float(deposit_val), curr)
-            confirmation_msg += (
-                f"⚠️ <b>Note: deposit {d_str} is required to secure your slot.</b>\n"
-                f"Please make payment within 60 minutes:\n"
-                f"💳 <b>Card:</b> <code>{html.escape(card_details)}</code>\n"
-                f"🏺 <b>Monobank Jar:</b> {html.escape(jar_link)}\n\n"
-                f"📸 <i>After payment, send a photo or receipt screenshot here in the chat!</i>"
-            )
-            await state.set_state(ReceiptUploadStates.waiting_for_photo)
-        else:
-            confirmation_msg += f"✅ Booking received! The master will confirm it shortly. Looking forward to seeing you at {html.escape(studio)}."
+        await state.set_state(ReceiptUploadStates.waiting_for_photo)
     else:
-        confirmation_msg = (
-            f"🎉 <b>Ваш запис успішно створено!</b>\n\n"
-            f"📅 Дата: <b>{date_str}</b>\n"
-            f"⏰ Час: <b>{start_time}</b>\n"
-            f"💅 Процедура: <b>{html.escape(srv_title)}</b>\n"
-        )
-        if discount_p > 0:
-            confirmation_msg += f"🎁 <i>Враховано вашу персональну знижку {discount_p}%!</i>\n"
-        if client.is_blacklisted:
-            confirmation_msg += f"⚠️ <i>Для вашого акаунту діє обов'язковий завдаток (No-Show).</i>\n"
-        confirmation_msg += "\n"
-
-        if deposit_required and deposit_val > Decimal("0.00"):
-            confirmation_msg += (
-                f"⚠️ <b>Увага: для фіксації запису потрібна передоплата {int(deposit_val)} ₴.</b>\n"
-                f"Будь ласка, здійсніть оплату протягом 60 хвилин:\n"
-                f"💳 <b>Карта:</b> <code>{html.escape(card_details)}</code>\n"
-                f"🏺 <b>Monobank Банка:</b> {html.escape(jar_link)}\n\n"
-                f"📸 <i>Після оплати просто надішліть фото або скріншот чека сюди в чат!</i>"
-            )
-            await state.set_state(ReceiptUploadStates.waiting_for_photo)
-        else:
-            confirmation_msg += f"✅ Запис прийнято! Майстер підтвердить його найближчим часом. Чекаємо на вас у студії {html.escape(studio)}."
+        confirmation_msg += "✅ Запис прийнято! Майстер підтвердить його найближчим часом. Чекаємо на вас у студії JuNail."
 
     try:
-        await callback.message.edit_text(confirmation_msg, reply_markup=get_client_main_keyboard(lang=bot_lang), parse_mode="HTML")
+        await callback.message.edit_text(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
     except Exception:
-        await callback.message.answer(confirmation_msg, reply_markup=get_client_main_keyboard(lang=bot_lang), parse_mode="HTML")
+        await callback.message.answer(confirmation_msg, reply_markup=get_client_main_keyboard(), parse_mode="HTML")
 
 
 # 5. Receipt Photo Upload Flow

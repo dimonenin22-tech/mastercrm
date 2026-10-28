@@ -32,7 +32,6 @@ import com.mastercrm.data.remote.dto.ScheduleDto
 import com.mastercrm.data.remote.dto.ScheduleExceptionDto
 import com.mastercrm.ui.theme.DividerColor
 import com.mastercrm.ui.theme.RosePrimary
-import com.mastercrm.util.AppLocale
 import com.mastercrm.ui.theme.StatusCancelled
 import com.mastercrm.ui.theme.StatusCompleted
 import kotlinx.coroutines.Dispatchers
@@ -49,12 +48,7 @@ fun SettingsScreen(
     val isOwner = app.authRepository.getRole() == "owner"
 
     var selectedSettingsTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf(
-        AppLocale.t("Студія", "Studio"),
-        AppLocale.t("Майстри", "Staff"),
-        AppLocale.t("Графік роботи", "Schedule"),
-        AppLocale.t("Шаблони SMS/Bot", "Templates")
-    )
+    val tabTitles = listOf("Студія", "Майстри", "Графік роботи", "Шаблони SMS/Bot")
 
     val masters by app.database.masterDao().getAllMastersFlow().collectAsState(initial = emptyList())
     val services by app.database.serviceDao().getAllServicesFlow().collectAsState(initial = emptyList())
@@ -67,7 +61,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(AppLocale.t("Налаштування студії", "Studio Settings"), fontWeight = FontWeight.Bold) },
+                title = { Text("Налаштування студії", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
@@ -300,94 +294,6 @@ fun StudioSettingsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Language & Currency Switcher Card (for Fiverr & Internationalization)
-        item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(AppLocale.t("🌐 Мова та Валюта", "🌐 Language & Currency"), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(AppLocale.t("Мова додатку:", "App Language:"), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = !AppLocale.isEnglish,
-                                onClick = {
-                                    AppLocale.setLanguage(context, "uk")
-                                    scope.launch(Dispatchers.IO) {
-                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "language", "value" to "uk"))
-                                    }
-                                },
-                                label = { Text("🇺🇦 Укр") }
-                            )
-                            FilterChip(
-                                selected = AppLocale.isEnglish,
-                                onClick = {
-                                    AppLocale.setLanguage(context, "en")
-                                    scope.launch(Dispatchers.IO) {
-                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "language", "value" to "en"))
-                                    }
-                                },
-                                label = { Text("🇬🇧 Eng") }
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(AppLocale.t("Валюта:", "Currency:"), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = AppLocale.currencySymbol == "$",
-                                onClick = {
-                                    AppLocale.setCurrency(context, "$")
-                                    scope.launch(Dispatchers.IO) {
-                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "$"))
-                                    }
-                                },
-                                label = { Text("$ USD") }
-                            )
-                            FilterChip(
-                                selected = AppLocale.currencySymbol == "грн",
-                                onClick = {
-                                    AppLocale.setCurrency(context, "грн")
-                                    scope.launch(Dispatchers.IO) {
-                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "грн"))
-                                    }
-                                },
-                                label = { Text("₴ UAH") }
-                            )
-                            FilterChip(
-                                selected = AppLocale.currencySymbol == "€",
-                                onClick = {
-                                    AppLocale.setCurrency(context, "€")
-                                    scope.launch(Dispatchers.IO) {
-                                        app.syncRepository.queueMutation("studio_setting_set", mapOf("key" to "currency_symbol", "value" to "€"))
-                                    }
-                                },
-                                label = { Text("€ EUR") }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
         // Profile & Current Role
         item {
             Card(
@@ -769,7 +675,7 @@ fun StudioSettingsTab(
                     OutlinedTextField(
                         value = depositAmount,
                         onValueChange = { depositAmount = it },
-                        label = { Text(AppLocale.t("Сума передоплати (${AppLocale.currencySymbol})", "Deposit Amount (${AppLocale.currencySymbol})")) },
+                        label = { Text("Сума передоплати (грн)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1992,21 +1898,21 @@ fun AddServiceDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text(AppLocale.t("Назва послуги", "Service Title")) },
+                    label = { Text("Назва послуги") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = priceText,
                     onValueChange = { priceText = it },
-                    label = { Text(AppLocale.t("Ціна (${AppLocale.currencySymbol})", "Price (${AppLocale.currencySymbol})")) },
+                    label = { Text("Ціна (грн)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = durationText,
                     onValueChange = { durationText = it },
-                    label = { Text(AppLocale.t("Тривалість (хвилин)", "Duration (minutes)")) },
+                    label = { Text("Тривалість (хвилин)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

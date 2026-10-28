@@ -83,7 +83,6 @@ async def init_and_seed_db() -> None:
             "deposit_required": ("false", "Чи потрібен обов'язковий завдаток: true/false"),
             "deposit_mode": ("NONE", "Режим передоплати: NONE, FIRST_TIME, ALL"),
             "deposit_amount": ("200", "Сума завдатку в грн"),
-            "currency_symbol": ("$", "Символ валюти для відображення: $, грн, €"),
             "card_details": ("5375 4141 1234 5678 (Анастасія В.)", "Реквізити банківської картки"),
             "jar_link": ("https://send.monobank.ua/jar/123456", "Посилання на банку Monobank"),
             "address": ("вул. Хрещатик, 1, оф. 10, Київ", "Адреса студії"),

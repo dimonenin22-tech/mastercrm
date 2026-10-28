@@ -27,7 +27,6 @@ import com.mastercrm.data.remote.dto.FinanceReportDto
 import com.mastercrm.data.remote.dto.ProductDto
 import com.mastercrm.data.remote.dto.ServiceConsumableItemDto
 import com.mastercrm.ui.theme.*
-import com.mastercrm.util.AppLocale
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -45,12 +44,7 @@ fun FinanceScreen() {
     val context = LocalContext.current
 
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabTitles = listOf(
-        AppLocale.t("Аналітика", "Analytics"),
-        AppLocale.t("Доходи", "Income"),
-        AppLocale.t("Витрати", "Expenses"),
-        AppLocale.t("Склад", "Inventory")
-    )
+    val tabTitles = listOf("Аналітика", "Доходи", "Витрати", "Склад")
 
     val incomes by app.database.incomeDao().getAllIncomesFlow().collectAsState(initial = emptyList())
     val expenses by app.database.expenseDao().getAllExpensesFlow().collectAsState(initial = emptyList())
@@ -101,7 +95,7 @@ fun FinanceScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(AppLocale.t("Фінанси та Склад", "Finance & Inventory"), fontWeight = FontWeight.Bold) },
+                title = { Text("Фінанси та Склад", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
@@ -479,13 +473,13 @@ fun AnalyticsTab(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = if (dateFilterMode == DateFilterMode.THIS_MONTH) AppLocale.t("Чистий прибуток за місяць", "Net Profit (This Month)") else AppLocale.t("Чистий прибуток за весь час", "Net Profit (All Time)"),
+                        text = if (dateFilterMode == DateFilterMode.THIS_MONTH) "Чистий прибуток за місяць (Net Profit)" else "Чистий прибуток за весь час",
                         color = Color.Gray,
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = AppLocale.formatMoney(netProfit),
+                        text = "${netProfit.toInt()} грн",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (netProfit >= 0) StatusCompleted else StatusCancelled
@@ -496,15 +490,15 @@ fun AnalyticsTab(
 
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricSmallCard(AppLocale.t("Виручка (Послуги)", "Revenue (Services)"), AppLocale.formatMoney(grossRev), StatusConfirmed, Modifier.weight(1f))
-                MetricSmallCard(AppLocale.t("Чайові ☕️", "Tips ☕️"), AppLocale.formatMoney(tips), RosePrimary, Modifier.weight(1f))
+                MetricSmallCard("Виручка (Послуги)", "${grossRev.toInt()} грн", StatusConfirmed, Modifier.weight(1f))
+                MetricSmallCard("Чайові ☕️", "${tips.toInt()} грн", RosePrimary, Modifier.weight(1f))
             }
         }
 
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricSmallCard(AppLocale.t("Витрати (Загальні)", "Total Expenses"), AppLocale.formatMoney(totalExpense), StatusCancelled, Modifier.weight(1f))
-                MetricSmallCard(AppLocale.t("Маржинальність", "Profit Margin"), "${margin.toInt()}%", Color(0xFF673AB7), Modifier.weight(1f))
+                MetricSmallCard("Витрати (Загальні)", "${totalExpense.toInt()} грн", StatusCancelled, Modifier.weight(1f))
+                MetricSmallCard("Маржинальність", "${margin.toInt()}%", Color(0xFF673AB7), Modifier.weight(1f))
             }
         }
 
@@ -522,10 +516,10 @@ fun AnalyticsTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(AppLocale.t("Середній чек:", "Average Ticket:"), fontWeight = FontWeight.SemiBold)
-                        Text(AppLocale.t("Виконано послуг: $serviceCount", "Completed services: $serviceCount"), fontSize = 12.sp, color = Color.Gray)
+                        Text("Середній чек:", fontWeight = FontWeight.SemiBold)
+                        Text("Виконано послуг: $serviceCount", fontSize = 12.sp, color = Color.Gray)
                     }
-                    Text(AppLocale.formatMoney(avgCheck), fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 18.sp)
+                    Text("${avgCheck.toInt()} грн", fontWeight = FontWeight.Bold, color = RosePrimary, fontSize = 18.sp)
                 }
             }
         }
@@ -916,7 +910,7 @@ fun AddFinanceRecordDialog(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    label = { Text(AppLocale.t("Сума (${AppLocale.currencySymbol})", "Amount (${AppLocale.currencySymbol})")) },
+                    label = { Text("Сума (грн)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -993,7 +987,7 @@ fun AddProductDialog(
                 OutlinedTextField(
                     value = priceText,
                     onValueChange = { priceText = it },
-                    label = { Text(AppLocale.t("Ціна закупівлі (${AppLocale.currencySymbol})", "Purchase Price (${AppLocale.currencySymbol})")) },
+                    label = { Text("Ціна закупівлі (грн)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
